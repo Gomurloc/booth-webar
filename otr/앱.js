@@ -3,6 +3,10 @@
 // 모드: ?booth=1 부스(직원이 다루는 가로 화면), 없으면 폰(손님 폰, 세로).
 // 그 밖의 주소 옵션: ?debug=1 디버그 표시, ?cdn=1 내려받아 둔 라이브러리 대신 CDN, ?qr=<주소> 부스 QR,
 // ?model=multiclass|selfie|landscape 사람 인식 모델 강제.
+// 허브(booth-webar)에서 덧붙임
+// - ?ar=1 포스터 AR(폰): 뒤 카메라로 OFF THE RECORD 포스터를 알아보면 캐릭터가 포스터에서 걸어 나와 앞 바닥에 선다(포스터AR.js).
+//   인식이 안 되면 "포스터 없이"(원래 사진 앱)로 넘어간다.
+// - 캐릭터.json의 anim이 있으면 PNG 대신 반복 영상으로 살아 움직인다(움직임.js). 못 쓰면 PNG.
 import { makeView, stillView, captureSize, canvasPixelSize, orientationOf, maskBoxToView, cropNorm, sameCrop } from './화면.js';
 import {
   defaultPlacement,
@@ -23,14 +27,28 @@ import { PersonDetector } from './사람.js';
 import { FRAMES, FONT, layoutFrame, drawFrame } from './틀.js';
 import { canvasToJpeg, makePhotoFile, canShareFile, sharePhoto, downloadPhoto, printPhoto, setPrintPhoto } from './내보내기.js';
 import { Sound } from './소리.js';
-import { loadSettings, saveSettings } from './설정.js';
+import { loadSettings, saveSettings, AR_LIMITS, AR_DEFAULTS, sanitizeArWorld } from './설정.js';
 import { openCamera, attachVideo, stopStream, listCameras, CameraError } from './카메라.js';
+import { PosterAR, requestOrientation, needsOrientationPermission } from './포스터AR.js';
+import { AnimGL, AnimSprite, StillSprite } from './움직임.js';
 
 const query = new URLSearchParams(location.search);
 const MODE = query.get('booth') === '1' ? 'booth' : 'phone';
 const DEBUG = query.get('debug') === '1';
 const CDN_ONLY = query.get('cdn') === '1';
 const QR_TARGET = query.get('qr');
+const AR = MODE === 'phone' && query.get('ar') === '1';
+const AR_HINT_MS = 6000; // 다 걸어 나온 뒤 "포스터 앞에 서서 함께 찍어요"를 보여 주는 시간
+const AR_IDLE_SEG_MS = 500; // 포스터를 찾는 동안 사람 인식 주기
+const AR_SCAN_HINT_MS = 5000; // 이만큼 못 찾으면 "포스터 전체가 보이게"로 바꾼다(앞사람이 가리고 있는 경우가 많다)
+const AR_FIT_HOLD_MS = 250; // 착지 자리가 이만큼 이어서 화면에 들어와야 걸어 나온다(한 프레임 맞고 나가는 것을 거른다)
+const AR_OUT_HINT_MS = 800; // 다 나온 캐릭터가 이만큼 넘게 화면 밖이면 "조금 뒤로 물러나 주세요"
+// 착지 자리가 화면에 들어왔는지(보기 정규 좌표). 발 지점 가로(cx: 몸 가운데)와 머리·발 높이로 본다.
+// 걸어 나오기 전(strict): 몸 가운데·발·머리가 대략 화면 안(몸 절반쯤은 보임). 허브에서 바로 열린 1~1.4m에서는 가운데가
+// -0.4·1.4 안팎, 발이 화면 아래로 한참 나가 걸린다. 기본 자리(±0.55m, 세로 폰, 화각 63도)면 포스터에서 약 2.2m부터 맞는다.
+// 다 나온 뒤 "조금 뒤로 물러나 주세요"(loose)는 더 느슨하게(몸 가운데가 화면 밖으로 확실히 나갔을 때만)
+const AR_FIT = { strict: { cx0: -0.05, cx1: 1.05, top: -0.03, feet: 1.03 }, loose: { cx0: -0.12, cx1: 1.12, top: -0.1, feet: 1.08 } };
+const CAM_LAG_QUERY = Number(query.get('camlag')); // 시험용: 카메라 지연(ms)을 이 값으로 본다
 // 받기.mjs의 QR 경로·버전과 맞춘다
 const QR_LIB = {
   local: './라이브러리/qrcode/qrcode.mjs',
@@ -86,6 +104,8 @@ const el = {
   resetPlacement: $('배치초기화'),
   lockSetting: $('배치잠금설정'),
   fullscreen: $('전체화면'),
+  motion: $('움직임허용'), // 포스터 AR(iOS): 자이로 허락 단추
+  arValues: $('AR값'), // 설정창: 캐릭터.json에 옮길 지금 값
 };
 const ctx = el.canvas.getContext('2d', { alpha: false });
 
@@ -104,7 +124,19 @@ const app = {
   camera: null,
   camToken: 0,
   errorKind: null,
-  facing: 'user', // 폰은 셀카 카메라로 시작
+  facing: AR ? 'environment' : 'user', // 폰은 셀카 카메라로 시작. 포스터 AR은 친구가 찍어 주므로 뒤 카메라
+  ar: null, // PosterAR
+  arStatus: AR ? 'loading' : 'off',
+  arOff: false, // 포스터 없이로 넘어갔다
+  arLandedAt: 0,
+  arHintShown: '',
+  arScanSince: 0, // 포스터를 찾기 시작한 때
+  arFit: null, // 이번 프레임 착지 자리가 화면에 들어오나 { strict, loose }
+  arJson: null, // 캐릭터.json의 ar(모든 손님 폰이 받는 세계 값)
+  orientState: null, // iOS 자이로 허락: 'granted' | 'denied' | 'prompt' | 'unneeded'
+  orientAsking: false,
+  animGL: null,
+  animHolder: null,
   view: null,
   orient: null, // 마지막으로 그린 화면 방향(바뀌면 잠금 표시를 다시 맞춘다)
   watch: { t: -1, at: 0, moved: false }, // 영상 멈춤 감시
@@ -146,7 +178,29 @@ const hooks = {
     return Object.fromEntries(app.arts.map((a) => [a.id, placementFor(a.id)]));
   },
   get stats() {
-    return app.report.map((r) => ({ id: r.id, box: r.box, stats: r.stats, params: r.params }));
+    return app.report.map((r) => ({ id: r.id, box: r.box, stats: r.stats, params: r.params, gpu: r.gpu }));
+  },
+  // 포스터 AR: 상태, 인식기 성능, 캐릭터 바닥 자리(영상 픽셀)
+  get ar() {
+    return app.ar
+      ? { ...app.ar.debug(), off: app.arOff, fit: app.arFit, orient: app.orientState, items: castItems().map((c) => ({ id: c.art.id, placement: c.placement, fx: c.fx })) }
+      : { status: app.arStatus, off: app.arOff, orient: app.orientState };
+  },
+  arForget: () => app.ar?.forget(),
+  arObject: () => app.ar, // 시험용(인식기 시간 재기)
+  get anim() {
+    return {
+      gl: app.animGL
+        ? { ok: app.animGL.ok, error: app.animGL.error ?? null, size: [app.animGL.canvas.width, app.animGL.canvas.height], fb: app.animGL.fbSize, grows: app.animGL.grows ?? 0 }
+        : null,
+      sprites: app.arts.map((a) => ({ id: a.id, ready: !!a.anim?.ready, failed: !!a.anim?.failed, frame: a.anim?.frameId ?? 0, t: a.anim?.video?.currentTime ?? null })),
+    };
+  },
+  get hint() {
+    return el.hint.hidden ? null : el.hint.textContent;
+  },
+  get perf() {
+    return { renderMs: app.renderMs ?? 0, segMs: person.status.lastMs, seg: person.status.loaded ? person.status.model : null };
   },
 };
 window.__booth = hooks;
@@ -156,6 +210,9 @@ function setState(s) {
   app.state = s;
   hooks.state = s;
   el.body.dataset.state = s;
+  // 결과·오류 화면에서는 포스터 인식을 쉰다(자리는 그대로 기억). 카운트다운 중에는 무거운 찾기만 쉰다(추적은 계속)
+  app.ar?.pause(!(s === 'live' || s === 'countdown' || s === 'loading'));
+  if (app.ar) app.ar.detectPaused = s === 'countdown';
   // 결과 화면을 떠나면 대기 타이머를 늘 끈다(결과를 그리는 사이에 돌아간 경우에도 미리보기에서 타이머가 새지 않게)
   if (s !== 'result') {
     clearInterval(app.idle.timer);
@@ -353,7 +410,185 @@ function shownPlacement(id) {
 }
 
 function castItems() {
-  return app.arts.filter((a) => app.cast.includes(a.id)).map((a) => ({ art: a, placement: shownPlacement(a.id) }));
+  if (arActive()) return arItems();
+  return app.arts.filter((a) => app.cast.includes(a.id)).map((a) => ({ art: a, placement: shownPlacement(a.id), anim: liveAnim(a) }));
+}
+
+// 미리보기 GPU 경로에 넣을 것: 반복 영상(준비됐으면), 포스터 AR이면 PNG를 쌓은 정지 그림, 아니면 null(PNG를 CPU로)
+function liveAnim(a) {
+  if (!app.animGL?.ok) return null;
+  if (a.anim && !a.anim.failed && a.anim.ready) return a.anim;
+  if (arActive()) return (a.still ??= new StillSprite(a.img));
+  return null;
+}
+
+// ── 포스터 AR ─────────────────────────────────────
+function arActive() {
+  return AR && !app.arOff && !!app.ar && app.arStatus !== 'failed';
+}
+
+// 이번 프레임 AR 캐릭터(세계에서 투영한 자리 + 걸어 나오기 효과). 포스터를 잡기 전에는 비어 있다.
+// 착지 자리가 화면에 들어오는지(app.arFit)도 같이 잰다: 걸어 나오기를 기다릴지, "뒤로 물러나 주세요"를 띄울지
+function arItems() {
+  if (!app.view) return [];
+  const ids = app.arts.filter((a) => app.cast.includes(a.id)).map((a) => a.id);
+  const raw = app.ar.items(performance.now(), app.view, ids, app.arts.map((a) => a.id));
+  if (raw.length) {
+    const strictMiss = landMiss(raw, AR_FIT.strict);
+    const looseMiss = landMiss(raw, AR_FIT.loose);
+    app.arFit = { strict: !strictMiss, loose: !looseMiss, strictMiss, looseMiss, waiting: raw.some((i) => i.waiting), landed: raw.every((i) => i.landed) };
+  } else app.arFit = null;
+  return raw
+    .filter((it) => it.fx.alpha > 0.01)
+    .map((it) => {
+      const art = artOf(it.id);
+      return { art, placement: { ...it.placement, flip: false, locked: true, front: 'person' }, fx: it.fx, anim: liveAnim(art), landed: it.landed };
+    });
+}
+
+// 모든 캐릭터의 착지 자리가 기준 rule만큼 화면 안인가. 반환: null(맞음) | 'far'(옆으로 나감, 또는 머리·발이 둘 다 나감 = 너무 가까움)
+// | 'low'(발만 화면 아래로: 폰을 내리면 된다) | 'high'(머리만 화면 위로)
+function landMiss(raw, rule) {
+  let side = false;
+  let low = false;
+  let high = false;
+  for (const it of raw) {
+    const p = it.land;
+    if (!p) return 'far';
+    const head = p.feetY - p.heightFrac * Math.cos(p.tilt ?? 0);
+    if (p.cx < rule.cx0 || p.cx > rule.cx1) side = true;
+    if (p.feetY > rule.feet) low = true;
+    if (head < rule.top) high = true;
+  }
+  if (side || (low && high)) return 'far';
+  return low ? 'low' : high ? 'high' : null;
+}
+
+// 안 맞는 까닭(far·low·high)이 바뀌어도 0.3초 이어질 때만 안내를 바꾼다(경계에서 두 안내가 번갈아 깜빡이지 않게)
+function stableMiss(key, now) {
+  if (!app.arMissKey || key === app.arMissKey) {
+    app.arMissKey = key;
+    app.arMissSince = 0;
+  } else if (!app.arMissSince) app.arMissSince = now;
+  else if (now - app.arMissSince > 300) {
+    app.arMissKey = key;
+    app.arMissSince = 0;
+  }
+  return app.arMissKey;
+}
+
+// 착지 자리가 안 맞을 때 안내(걸어 나오기 전 / 다 나온 뒤)
+const FIT_HINT = {
+  far: ['두세 걸음 뒤로 물러나 주세요', '조금 뒤로 물러나 주세요'],
+  low: ['발이 보이게 폰을 조금 내려 주세요', '발이 보이게 폰을 조금 내려 주세요'],
+  high: ['머리가 보이게 폰을 조금 올려 주세요', '머리가 보이게 폰을 조금 올려 주세요'],
+};
+
+// 세계 설정(미터·도): 이 폰의 설정창 값 → 캐릭터.json의 ar(배포 값) → 기본값. 캐릭터별 키·좌우도 같은 순서
+function arWorld() {
+  const a = settings.ar;
+  const j = app.arJson ?? AR_DEFAULTS;
+  const pick = (k) => a[k] ?? j[k] ?? AR_DEFAULTS[k];
+  const chars = {};
+  app.arts.forEach((art, i) => {
+    const d = art.arDefault ?? { height: 1.6, offset: i === 0 ? -0.55 : 0.55 };
+    const c = a.chars[art.id] ?? {};
+    chars[art.id] = { height: c.height ?? d.height, offset: c.offset ?? d.offset };
+  });
+  return { posterHeight: pick('posterHeight'), standOff: pick('standOff'), posterWidth: pick('posterWidth'), fov: pick('fov'), chars };
+}
+
+async function startAR() {
+  if (!AR || app.ar || app.arOff) return;
+  const ar = new PosterAR({
+    video: el.video,
+    targetsUrl: new URL('../targets/targets_otr.mind', import.meta.url).href,
+    vendorUrl: new URL('../vendor/mindar-three.js', import.meta.url).href,
+    world: arWorld,
+    front: () => app.facing === 'user',
+    reduced: () => reduceMotion.matches,
+    onStatus: onArStatus,
+    camLag: query.has('camlag') && Number.isFinite(CAM_LAG_QUERY) ? CAM_LAG_QUERY : null,
+  });
+  app.ar = ar;
+  // iOS: 허브 카드에서 받은 허락이 있으면 사용자 동작 없이도 창 없이 granted로 돌아온다. 없으면 '움직임 허용' 단추를 띄운다
+  if (needsOrientationPermission()) {
+    requestOrientation().then((r) => {
+      if (app.orientState !== 'granted') app.orientState = r;
+      syncMotionChip();
+    });
+  } else app.orientState = 'unneeded';
+  try {
+    await ar.start();
+  } catch (e) {
+    console.warn('포스터 인식을 켜지 못함', e);
+    if (app.ar === ar) arFallback('이 기기에서는 포스터 인식이 안 돼요. 포스터 없이 찍어요.');
+  }
+}
+
+function onArStatus(s) {
+  const was = app.arStatus;
+  app.arStatus = s;
+  el.body.dataset.arStatus = s;
+  if (s === 'live' && was !== 'live' && app.ar?.anchor && performance.now() - app.ar.anchor.at < 200) app.arLandedAt = 0;
+  if (s === 'failed' && !app.arOff) arFallback('포스터 인식이 멈췄어요. 포스터 없이 찍어요.');
+}
+
+// 원래 사진 앱처럼(화면에 세운 캐릭터를 끌어 옮기기)
+function arFallback(msg) {
+  if (app.arOff) return;
+  app.arOff = true;
+  app.ar?.stop();
+  el.body.dataset.ar = 'off';
+  hideHint();
+  if (msg) toast(msg);
+  syncEditUi();
+}
+
+// 안내 한 줄: 인식 준비 → 포스터를 비춰 주세요(5초 넘게 못 찾으면 전체가 보이게) → (포스터에 너무 가까우면 캐릭터가 포스터 안에서
+// 기다리며) 두세 걸음 뒤로 물러나 주세요 → (걸어 나옴) → 포스터 앞에 서서 함께 찍어요(6초). 다 나온 뒤 잘려 보이면 조금 뒤로 물러나 주세요
+function syncArHint(now) {
+  if (!arActive()) return;
+  const f = app.arFit;
+  let text = '';
+  if (app.arStatus === 'scanning') app.arScanSince ||= now;
+  else app.arScanSince = 0;
+  if (app.arStatus === 'loading') text = '포스터 인식 준비 중…';
+  else if (app.arStatus === 'scanning') text = now - app.arScanSince < AR_SCAN_HINT_MS ? '포스터를 화면에 비춰 주세요' : '포스터 전체가 보이게 비춰 주세요';
+  else if (f?.waiting) text = f.strict ? '' : FIT_HINT[stableMiss(f.strictMiss, now)][0];
+  else if (f?.landed) {
+    // 몸 가운데가 화면 밖으로 0.8초 넘게 나가 있으면(옆으로 돌리는 중에 잠깐 나간 것은 봐준다)
+    if (!f.loose) app.arOutSince ||= now;
+    else app.arOutSince = 0;
+    if (app.arOutSince && now - app.arOutSince > AR_OUT_HINT_MS) text = FIT_HINT[stableMiss(f.looseMiss, now)][1];
+    else if (f.loose) {
+      if (!app.arLandedAt) app.arLandedAt = now;
+      if (now - app.arLandedAt < AR_HINT_MS) text = '포스터 앞에 서서 함께 찍어요';
+    }
+  }
+  if (text === app.arHintShown) return;
+  app.arHintShown = text;
+  el.hint.textContent = text;
+  el.hint.hidden = !text;
+}
+
+// iOS에서 자이로 허락이 아직 없을 때만 '움직임 허용' 단추(누르면 허락 창). 자이로가 없으면 포스터를 가린 동안 캐릭터가 화면에 멈춘다
+function syncMotionChip() {
+  const b = el.motion;
+  if (!b) return;
+  const need = arActive() && needsOrientationPermission() && app.orientState === 'prompt' && !app.ar?.gyro.available;
+  if (b.hidden === !need) return;
+  b.hidden = !need;
+}
+
+function askOrientation() {
+  if (app.orientAsking || app.orientState === 'granted' || app.orientState === 'denied' || app.orientState === 'unneeded') return;
+  app.orientAsking = true;
+  requestOrientation().then((r) => {
+    app.orientAsking = false;
+    if (app.orientState !== 'granted') app.orientState = r;
+    syncMotionChip();
+  });
 }
 
 function isLocked() {
@@ -365,7 +600,7 @@ function editMode() {
 }
 
 function canEdit() {
-  return app.state === 'live' && editMode();
+  return app.state === 'live' && editMode() && !arActive();
 }
 
 function select(id) {
@@ -410,25 +645,58 @@ function cycleSelected(back) {
 async function loadCharacters() {
   const base = new URL('./캐릭터/', import.meta.url);
   const cfg = await (await fetch(new URL('캐릭터.json', base))).json();
+  app.arJson = sanitizeArWorld(cfg.ar); // 포스터 AR 세계 값(모든 손님 폰이 받는 값)
   const arts = await Promise.all(
     cfg.characters.map(async (c) => {
       const img = new Image();
       img.src = new URL(c.file, base).href;
       await img.decode();
       // 빈칸이 있어도 돌게 기본값을 채운다
-      return prepareArt(img, {
+      const art = prepareArt(img, {
         id: c.id,
         name: c.name ?? c.id,
         top: c.top ?? 0,
         feet: { x: c.feet?.x ?? 0.5, y: c.feet?.y ?? 1 },
         face: { x: c.face?.x ?? 0.5, y: c.face?.y ?? 0.1, size: c.face?.size ?? 0.4 },
       });
+      // 반복 영상(같은 그림 판·발 자리의 위 색/아래 알파 mp4). 받는 동안과 못 쓸 때는 PNG
+      if (c.anim?.file) art.anim = new AnimSprite(new URL(c.anim.file, base).href, { loop: c.anim.loop !== false, fps: c.anim.fps ?? 24 });
+      // 포스터 AR 기본값(키 m, 포스터 가운데에서 좌우 m)
+      if (c.ar) art.arDefault = { height: c.ar.height ?? 1.6, offset: c.ar.offset ?? 0 };
+      return art;
     }),
   );
   app.arts = arts;
+  startAnims();
+  buildArCharInputs();
   buildCastChips();
   applyCast(settings.cast, false);
   syncEditUi();
+}
+
+// 반복 영상 재생 시작. WebGL을 못 쓰면 영상도 받지 않는다(PNG만). 포스터 AR은 영상이 없어도 GPU 경로를 쓴다
+function startAnims() {
+  if (!AR && !app.arts.some((a) => a.anim)) return;
+  app.animGL = new AnimGL();
+  if (!app.animGL.ok) {
+    console.warn('반복 영상 없이 진행(WebGL)', app.animGL.error);
+    return;
+  }
+  liveComp.gpu = app.animGL;
+  if (AR) {
+    // 첫 등장 때 멈칫하지 않게 정지 그림을 미리 쌓고 셰이더를 한 번 돌려 둔다
+    for (const a of app.arts) a.still = new StillSprite(a.img);
+    const s = app.arts[0]?.still;
+    if (s) app.animGL.render(s, 32, 64, { luts: [0, 1, 2].map(() => Uint8Array.from({ length: 256 }, (_, i) => i)), lutKey: -1, sat: 1, wrapAlpha: 0, grain: 0, softness: 0.8, flip: false, noise: noise.canvas });
+  }
+  if (!app.arts.some((a) => a.anim)) return;
+  // iOS는 문서에 붙은 영상이어야 프레임을 준다: 미리보기 캔버스 밑에 아주 작게 깐다
+  const holder = document.createElement('div');
+  holder.setAttribute('aria-hidden', 'true');
+  Object.assign(holder.style, { position: 'absolute', left: '0', top: '0', width: '2px', height: '2px', overflow: 'hidden', opacity: '0.01', pointerEvents: 'none', zIndex: '-1' });
+  el.video.after(holder);
+  app.animHolder = holder;
+  for (const a of app.arts) a.anim?.start(holder);
 }
 
 // 얼굴 썸네일(정사각). 원본 밖으로 나가는 부분은 검정
@@ -598,21 +866,55 @@ function loop(now) {
   updateView();
   if (app.anim && now - app.anim.start >= AUTO_PLACE_MS) app.anim = null;
 
-  if (person.ready && !document.hidden && now - app.lastSeg >= SEG_EVERY) {
+  // 영상 크기가 바뀜(폰을 세로↔가로로 돌림·카메라를 바꿈) 또는 화각 설정을 바꿈. 크기만 바뀌면 잡은 자리를 그대로 둔다
+  // (카메라를 바꿀 때는 단추가 먼저 forget을 부른다)
+  const rebuild = arActive() ? app.ar.needsRebuild() : null;
+  if (rebuild) app.ar.restart({ keep: rebuild === 'size' });
+  for (const a of app.arts) a.anim?.tick(now);
+  const cast = castItems();
+  if (arActive()) {
+    // 착지 자리가 화면에 다 들어오면(0.25초 이어서) 포스터 안에서 기다리던 캐릭터가 걸어 나온다
+    const f = app.arFit;
+    if (f?.waiting && f.strict) {
+      app.arFitSince ||= now;
+      if (now - app.arFitSince >= AR_FIT_HOLD_MS) app.ar.release(performance.now());
+    } else app.arFitSince = 0;
+    syncArHint(now);
+    syncMotionChip();
+  }
+
+  // 포스터 AR에서 캐릭터가 아직 없으면(포스터를 찾는 중) 사람 인식은 0.5초에 한 번만(인식기에 시간을 주되 식지 않게)
+  // 포스터 AR에서는 인식기도 메인 스레드를 쓰므로, 사람 인식이 느린 폰이면 간격을 걸린 시간의 4배 이상으로 벌린다
+  const segEvery = !arActive() ? SEG_EVERY : cast.length === 0 ? AR_IDLE_SEG_MS : Math.max(SEG_EVERY, 4 * (person.status.lastMs || 0));
+  if (person.ready && !document.hidden && now - app.lastSeg >= segEvery) {
     app.lastSeg = now;
     person.updateLive(el.video, app.view.crop);
   }
 
+  // 포스터 AR에서 캐릭터가 없는 동안은 카메라 <video>를 그대로 보인다. 포스터 찾기가 메인 스레드를 수십 ms씩 잡아서
+  // 캔버스로 그리면 미리보기가 끊긴다(<video>는 브라우저가 따로 그린다). 캔버스와 같은 cover 자르기라 화면이 그대로다
+  if (setRawPreview(AR && arActive() && cast.length === 0 && app.state !== 'countdown')) {
+    if (!app.drawn && app.arts.length) {
+      app.drawn = true;
+      if (app.state === 'loading') setState('live');
+      hooks.ready = true;
+      onFirstFrame();
+    }
+    if (DEBUG) updateDebug(now);
+    return;
+  }
   const mask = person.status.loaded && person.live ? { canvas: person.live.canvas } : null;
+  const t0 = performance.now();
   app.report = liveComp.render(ctx, {
     source: el.video,
     view: app.view,
-    cast: castItems(),
+    cast,
     mask,
     look: look(),
     now,
     debugTint: DEBUG,
   });
+  app.renderMs = app.renderMs ? app.renderMs * 0.9 + (performance.now() - t0) * 0.1 : performance.now() - t0; // 합성 시간(디버그·시험)
   drawEditOverlay();
   if (DEBUG) drawPeopleBox();
 
@@ -625,13 +927,27 @@ function loop(now) {
   if (DEBUG) updateDebug(now);
 }
 
+// 캔버스를 숨기고 카메라 영상을 바로 보일지. 거울 반전은 CSS로 맞춘다
+function setRawPreview(on) {
+  if (app.rawPreview === on) return on;
+  app.rawPreview = on;
+  el.canvas.style.visibility = on ? 'hidden' : '';
+  el.video.style.transform = on && app.view?.mirror ? 'scaleX(-1)' : '';
+  return on;
+}
+
 let firstFrameDone = false;
 function onFirstFrame() {
   if (firstFrameDone) return;
   firstFrameDone = true;
   // 미리보기가 먼저 보이게 한 뒤 모델을 받는다(GPU 첫 프레임은 셰이더 컴파일로 잠깐 멈출 수 있다)
   setTimeout(() => person.load(), 300);
-  if (MODE === 'phone') {
+  if (AR) {
+    el.body.dataset.ar = 'on';
+    el.body.dataset.arStatus = app.arStatus;
+    syncEditUi();
+    startAR();
+  } else if (MODE === 'phone') {
     el.hint.hidden = false;
     app.hintTimer = setTimeout(hideHint, 7000);
   }
@@ -639,6 +955,7 @@ function onFirstFrame() {
 
 function hideHint() {
   clearTimeout(app.hintTimer);
+  if (arActive()) return; // 포스터 AR 안내는 상태가 정한다(화면을 눌러도 남는다)
   el.hint.hidden = true;
 }
 
@@ -714,6 +1031,14 @@ function updateDebug(now) {
     `사람 ${s.loaded ? `${s.model} ${s.delegate} ${s.source} ${s.lastMs.toFixed(1)}ms 덮음 ${f(s.coverage)}` : s.failed ? `실패: ${s.error}` : '불러오는 중'}`,
     `화면 전체 p2 ${f(wh?.p2)} p98 ${f(wh?.p98)}`,
   ];
+  if (app.ar) {
+    const d = app.ar.debug();
+    lines.push(
+      `AR ${app.arOff ? '끔' : d.status} 포스터 ${d.index ?? '-'} 거리 ${d.depthM ? d.depthM.toFixed(2) + 'm' : '-'} 자이로 ${d.gyro ? '켬' : '없음'}`,
+      `   인식 ${d.perf.rate.toFixed(0)}/초 찾기 ${d.perf.detectMs.toFixed(0)}ms(메인 ${d.perf.detectMainMs.toFixed(0)}) 추적 ${d.perf.trackMs.toFixed(0)}ms(메인 ${d.perf.trackMainMs.toFixed(0)})`,
+      `   맞춘 점 ${(d.q * 100).toFixed(0)}%(기준 ${(d.qGate * 100).toFixed(0)}%) 카메라 지연 ${d.camLag ?? '-'}ms 자이로 ${d.gyroEvents}번${d.waiting ? ' 기다림' : ''}`,
+    );
+  }
   for (const r of app.report) {
     const st = r.stats;
     const p = r.params;
@@ -870,10 +1195,17 @@ function capture() {
   const base = app.canvases.base;
   base.width = size.w;
   base.height = size.h;
+  // 반복 영상 캐릭터는 지금 프레임을 원래 해상도로 풀어 PNG 자리에 넣는다(사진은 기존 CPU 경로 그대로)
+  const cast = castItems().map((c) => {
+    if (!c.anim) return c;
+    if (c.anim.still) return { ...c, anim: null }; // 정지 그림은 PNG 그대로
+    const frame = app.animGL?.rawFrame(c.anim);
+    return { ...c, anim: null, art: frame ? { ...c.art, img: frame } : c.art };
+  });
   const report = stillComp.render(base.getContext('2d'), {
     source: raw,
     view: sv,
-    cast: castItems(),
+    cast,
     mask: mask && settings.occlusion ? mask : null,
     look: look(),
     now: performance.now(),
@@ -1018,6 +1350,7 @@ function openSettings() {
     if (input.type === 'checkbox') input.checked = !!v;
     else input.value = String(v ?? '');
   }
+  if (AR) fillArInputs();
   el.settings.hidden = false;
   el.body.dataset.settings = 'open';
   el.gear.setAttribute('aria-expanded', 'true');
@@ -1031,8 +1364,75 @@ function closeSettings() {
   el.gear.setAttribute('aria-expanded', 'false');
 }
 
+// 설정창 포스터 AR 칸에 지금 쓰는 값(이 폰 값 → 캐릭터.json → 기본값)을 채운다
+function fillArInputs() {
+  const w = arWorld();
+  for (const input of el.form.querySelectorAll('[data-ar]')) input.value = String(w[input.dataset.ar]);
+  for (const input of el.form.querySelectorAll('[data-ar-char]')) input.value = String(w.chars[input.dataset.arChar]?.[input.dataset.field] ?? '');
+  syncArValues();
+}
+
+// 설정창: 지금 값을 캐릭터.json 꼴로 보여 준다. 여기서 바꾼 값은 이 폰에만 저장되므로, 손님 폰에도 쓰려면 이 값을 json에 옮겨 다시 올린다
+function syncArValues() {
+  if (!el.arValues || !AR) return;
+  const w = arWorld();
+  const r = (v) => Math.round(v * 1000) / 1000;
+  const lines = [`"ar": { "posterHeight": ${r(w.posterHeight)}, "standOff": ${r(w.standOff)}, "posterWidth": ${r(w.posterWidth)}, "fov": ${r(w.fov)} }`];
+  for (const a of app.arts) lines.push(`${a.id} → "ar": { "height": ${r(w.chars[a.id].height)}, "offset": ${r(w.chars[a.id].offset)} }`);
+  el.arValues.textContent = lines.join('\n');
+}
+
+// 이 폰에서 바꾼 포스터 AR 값을 지운다(캐릭터.json 값으로)
+function resetArOverrides() {
+  settings.ar = { posterHeight: null, standOff: null, posterWidth: null, fov: null, chars: {} };
+  saveSoon();
+  fillArInputs();
+  toast('이 폰의 포스터 AR 값을 지웠어요. 캐릭터.json 값을 써요.');
+}
+
+// 포스터 AR 설정(미터·도). 범위를 벗어나거나 쓰는 중인 값(빈칸 등)은 무시한다
+function onArSettingInput(t) {
+  const v = Number(t.value);
+  if (t.value === '' || !Number.isFinite(v)) return;
+  if (t.dataset.ar) {
+    const [lo, hi] = AR_LIMITS[t.dataset.ar];
+    if (v < lo || v > hi) return;
+    settings.ar[t.dataset.ar] = v;
+  } else {
+    const field = t.dataset.field;
+    const [lo, hi] = AR_LIMITS[field];
+    if (v < lo || v > hi) return;
+    const id = t.dataset.arChar;
+    settings.ar.chars[id] = { ...settings.ar.chars[id], [field]: v };
+  }
+  saveSoon();
+  syncArValues();
+}
+
+// 설정창: 캐릭터마다 키·좌우 자리 칸
+function buildArCharInputs() {
+  const box = document.getElementById('AR캐릭터');
+  if (!AR || !box) return;
+  const w = arWorld();
+  const field = (art, key, label, min, max) => {
+    const l = document.createElement('label');
+    l.textContent = `${art.name} ${label} `;
+    const i = document.createElement('input');
+    Object.assign(i, { type: 'number', min: String(min), max: String(max), step: '0.05', inputMode: 'decimal' });
+    i.dataset.arChar = art.id;
+    i.dataset.field = key;
+    i.value = String(w.chars[art.id][key]);
+    l.append(i);
+    return l;
+  };
+  box.replaceChildren(
+    ...app.arts.flatMap((a) => [field(a, 'height', '키(m)', ...AR_LIMITS.height), field(a, 'offset', '좌우(m, 오른쪽 +)', ...AR_LIMITS.offset)]),
+  );
+}
+
 function onSettingInput(e) {
   const t = e.target;
+  if (t.dataset.ar || t.dataset.arChar) return onArSettingInput(t);
   const key = t.dataset.key;
   if (!key) return;
   let v = t.type === 'checkbox' ? t.checked : t.value;
@@ -1191,11 +1591,15 @@ function wire() {
 
   // 첫 사용자 동작에서 소리·화면 꺼짐 막기를 켠다(브라우저가 동작 안에서만 허락한다)
   // 터치의 pointerdown은 사용자 활성화가 아니다(HTML 규격·WebKit). iOS는 pointerup·touchend·click에서만 허락하므로 모두 건다
-  const unlock = () => {
+  const unlock = (e) => {
     sound.unlock();
     keepAwake();
+    for (const a of app.arts) if (a.anim && !a.anim.failed && a.anim.video?.paused) a.anim.kick(); // iOS 저전력 모드
+    // 포스터 AR: iOS 자이로 허락(허브 카드에서 못 받았으면 여기서). 셔터는 빼고(카운트다운 중에 창이 뜨지 않게).
+    // WebKit은 touchend·click만 사용자 동작으로 친다. 사용자 동작이 아니라 거절되면('prompt') 다음 touchend·click에서 다시 묻는다
+    if (AR && (e.type === 'touchend' || e.type === 'click') && !e.target?.closest?.('#셔터, #움직임허용')) askOrientation();
   };
-  for (const ev of ['pointerdown', 'pointerup', 'touchend', 'keydown']) addEventListener(ev, unlock, { capture: true });
+  for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) addEventListener(ev, unlock, { capture: true });
   addEventListener('keydown', onKey);
   addEventListener('pointerdown', bumpIdle, { capture: true });
   // 부스: 손가락·마우스로 누른 단추에 포커스를 남기지 않는다(다음 Space/Enter·Tab이 그 단추로 가지 않게)
@@ -1213,6 +1617,7 @@ function wire() {
 
   el.shutter.addEventListener('click', () => shoot());
   el.switchCam.addEventListener('click', () => {
+    app.ar?.forget(); // 다른 카메라라 잡은 자리가 맞지 않는다
     app.facing = app.facing === 'environment' ? 'user' : 'environment';
     settings.cameraId = '';
     saveSoon();
@@ -1236,6 +1641,15 @@ function wire() {
     select(app.selected);
   });
   el.lock.addEventListener('click', toggleLock);
+  document.getElementById('다시불러오기').addEventListener('click', () => {
+    if (!arActive()) return;
+    app.ar.forget();
+    app.arLandedAt = 0;
+  });
+  document.getElementById('포스터없이').addEventListener('click', () => arFallback('포스터 없이 찍어요. 캐릭터를 끌어 옮길 수 있어요.'));
+  // iOS 자이로 허락(이 클릭이 사용자 동작이라 허락 창이 뜬다)
+  el.motion?.addEventListener('click', () => askOrientation());
+  document.getElementById('AR기본값')?.addEventListener('click', resetArOverrides);
   el.lockSetting.addEventListener('click', toggleLock); // 키보드 없는 태블릿 부스에서 잠금을 푸는 길
 
   el.frames.addEventListener('click', (e) => {

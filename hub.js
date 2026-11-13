@@ -365,7 +365,29 @@ function hideCard() {
 }
 
 el.cardOpen.addEventListener('click', () => {
-  if (hub.card) openGame(hub.card.game);
+  if (!hub.card) return;
+  const g = GAMES[hub.card.game];
+  if (!g?.arHref) return openGame(hub.card.game);
+  // 사진 앱 포스터 AR: 포스터를 놓쳤을 때 캐릭터를 세계에 붙여 두는 데 자이로를 쓴다.
+  // iOS는 탭 안에서만 허락을 물을 수 있어서 지금 묻고(같은 주소라 사진 앱에서도 쓴다), 답한 뒤에 간다
+  const D = window.DeviceOrientationEvent;
+  if (D && typeof D.requestPermission === 'function' && hub.state !== 'leaving') {
+    let asked;
+    try {
+      asked = D.requestPermission();
+    } catch {
+      asked = null;
+    }
+    if (asked?.then) {
+      el.cardOpen.disabled = true;
+      asked.catch(() => {}).finally(() => {
+        el.cardOpen.disabled = false;
+        openGame(hub.card?.game ?? g.id, { ar: true });
+      });
+      return;
+    }
+  }
+  openGame(hub.card.game, { ar: true });
 });
 el.cardDismiss.addEventListener('click', () => {
   const c = hub.card;
@@ -378,7 +400,8 @@ el.cardDismiss.addEventListener('click', () => {
 });
 
 // ── 게임 열기 ─────────────────────────────────
-function openGame(id) {
+// ar: 포스터를 알아본 카드에서 열었다(사진 앱은 포스터 AR로)
+function openGame(id, { ar = false } = {}) {
   const g = GAMES[id];
   if (!g || hub.state === 'leaving') return;
   log('open', { game: id, via: hub.state });
@@ -390,7 +413,7 @@ function openGame(id) {
     setState('dont');
     return;
   }
-  leave(g.href);
+  leave(ar && g.arHref ? g.arHref : g.href);
 }
 
 // 다른 페이지 콘텐츠: 인식과 카메라를 놓고 간다(그쪽 페이지가 카메라를 새로 연다).

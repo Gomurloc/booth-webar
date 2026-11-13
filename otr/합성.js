@@ -14,6 +14,13 @@
 //  7) 사진 전체에 아주 옅은 그레인
 // 무거운 일(색 맞춤 픽셀 처리)은 장면이 눈에 띄게 바뀌거나 크기가 바뀔 때만, 초당 몇 번만 한다.
 // ctx.filter는 사파리에서 꺼져 있어 흐림은 모두 줄였다 키우기로 만든다.
+//
+// 포스터 AR·살아 있는 캐릭터에서 더한 것(없으면 예전과 똑같이 그린다)
+// - 반복 영상 캐릭터(c.anim): 미리보기는 4)를 WebGL(움직임.js)에서 같은 식으로 칠한다(영상 프레임마다 CPU 픽셀 처리를 돌리면 폰이 못 따라온다).
+//   촬영(still)은 부르는 쪽이 지금 프레임을 그림(art.img)으로 바꿔 넣어 예전 CPU 경로 그대로.
+// - 효과(c.fx): alpha(불투명도), reveal(위에서부터 드러난 비율), glow(뒤에 번지는 빛), flash(위에 얹는 번쩍임),
+//   shadow(그림자 세기 배율). 걸어 나오기에 쓴다
+// - 기울기(c.placement.tilt, 라디안): 폰을 기울여 들면 세계의 세로도 화면에서 기운다. 발 지점을 축으로 그림자·캐릭터를 같이 돌린다
 import { sourceRectFor } from './화면.js';
 import { statsFromRGBA, harmonizeParams, buildLuts, applyHarmonize, statsChanged, lerpStats, shadowLight } from './색.js';
 import { artBox, drawOrder } from './배치.js';
@@ -41,6 +48,9 @@ export const LOOK = {
 };
 
 const FULL = { x: 0, y: 0, w: 1, h: 1 };
+const NO_FX = { alpha: 1, reveal: 1, glow: 0, flash: 0, shadow: 1 };
+// 걸어 나오기 빛: 실루엣을 1/10로 줄였다 키워 번지게. 뒤 빛(halo)은 캐릭터 밑에, 번쩍임(flash)은 위에
+const GLOW = { tint: '#ffe9c4', halo: { scale: 1.12, alpha: 0.42 }, flash: { scale: 1.03, alpha: 0.6 }, shrink: 12, pad: 0.25 };
 
 export function makeCanvas(w = 1, h = 1) {
   const c = document.createElement('canvas');
@@ -54,6 +64,63 @@ function fit(c, w, h) {
   if (c.width !== w) c.width = w;
   if (c.height !== h) c.height = h;
   return c;
+}
+
+// 모자랄 때만 늘린다(AR에서는 크기가 프레임마다 바뀐다): 지금보다 25% 넘게, 64px 단위로(걸어 나오며 커지는 동안 판을
+// 수십 번 다시 잡지 않게). 쓰는 쪽은 왼쪽 위 w×h만 쓴다
+export function growTo(cur, need) {
+  return need <= cur ? cur : Math.ceil(Math.max(need, cur * 1.25) / 64) * 64;
+}
+function fitAtLeast(c, w, h) {
+  if (c.width < w) c.width = growTo(c.width, w);
+  if (c.height < h) c.height = growTo(c.height, h);
+  return c;
+}
+
+// 캐릭터 상자 중 화면(여유 3%)에 보이는 부분(상자 기준 0..1). 발 지점을 축으로 tilt만큼 돌려 그리므로 화면 사각을 거꾸로 돌려 잰다.
+// 다 보이면 null(통째로 그린다), 하나도 안 보이면 { empty: true }
+function visibleSub(box, tilt, W, H) {
+  const m = 0.03;
+  const px = box.fx * W;
+  const py = box.fy * H;
+  const c = Math.cos(-tilt);
+  const s = Math.sin(-tilt);
+  const xs = [];
+  const ys = [];
+  for (const [x, y] of [[-m * W, -m * H], [(1 + m) * W, -m * H], [-m * W, (1 + m) * H], [(1 + m) * W, (1 + m) * H]]) {
+    const dx = x - px;
+    const dy = y - py;
+    xs.push((px + dx * c - dy * s - box.x0 * W) / (box.w * W));
+    ys.push((py + dx * s + dy * c - box.y0 * H) / (box.h * H));
+  }
+  const x0 = Math.max(0, Math.min(...xs));
+  const x1 = Math.min(1, Math.max(...xs));
+  const y0 = Math.max(0, Math.min(...ys));
+  const y1 = Math.min(1, Math.max(...ys));
+  if (x1 <= x0 || y1 <= y0) return { empty: true };
+  if (x0 <= 0.001 && y0 <= 0.001 && x1 >= 0.999 && y1 >= 0.999) return null;
+  // 1/64 단위로 넓혀 맞춘다(작은 흔들림마다 판 크기가 바뀌지 않게)
+  const q = (v, up) => (up ? Math.ceil(v * 64) : Math.floor(v * 64)) / 64;
+  const sx0 = q(x0, false);
+  const sy0 = q(y0, false);
+  return { x: sx0, y: sy0, w: Math.min(1, q(x1, true)) - sx0, h: Math.min(1, q(y1, true)) - sy0 };
+}
+
+// 사각형 r({x,y,w,h}, 대상 픽셀)을 (px,py) 둘레로 a만큼 돌렸을 때 감싸는 사각형
+function rotatedBounds(r, px, py, a) {
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const xs = [];
+  const ys = [];
+  for (const [x, y] of [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]]) {
+    const dx = x - px;
+    const dy = y - py;
+    xs.push(px + dx * c - dy * s);
+    ys.push(py + dx * s + dy * c);
+  }
+  const x0 = Math.min(...xs);
+  const y0 = Math.min(...ys);
+  return { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0 };
 }
 
 // 잡음 타일: 평균 128, 대략 정규분포. 픽셀 처리(배열)와 패턴 칠하기(캔버스)에 같이 쓴다
@@ -231,10 +298,13 @@ export function prepareArt(img, meta) {
 }
 
 export class Compositor {
-  // still: 촬영용(통계를 매번 새로 재고, 평활·주기 제한 없이 바로 칠한다)
-  constructor({ noise, still = false }) {
+  // still: 촬영용(통계를 매번 새로 재고, 평활·주기 제한 없이 바로 칠한다). gpu: 반복 영상 캐릭터를 칠할 AnimGL(미리보기만)
+  constructor({ noise, still = false, gpu = null }) {
     this.noise = noise;
     this.still = still;
+    this.gpu = gpu;
+    this.rev = makeCanvas();
+    this.glows = new WeakMap();
     this.chars = new Map();
     this.shadow = makeCanvas();
     this.occ = makeCanvas();
@@ -259,17 +329,19 @@ export class Compositor {
         look: null,
         prep: null,
         work: makeCanvas(), // 픽셀 처리용(CPU)
-        out: makeCanvas(), // 매 프레임 그릴 결과
+        out: makeCanvas(), // 매 프레임 그릴 결과(왼쪽 위 prep.w×prep.h)
         soft: makeCanvas(),
         wrap: makeCanvas(),
+        gprep: null, // 반복 영상(GPU) 경로의 맞춤 값
+        wrapSrc: null,
       };
       this.chars.set(id, st);
     }
     return st;
   }
 
-  // f: { source, view, cast:[{art, placement}], mask:{canvas}|null, look:{harmonize, shadow, grain, occlusion}, now, debugTint }
-  // 반환: 캐릭터별 { id, box(보기 정규), stats, params } (디버그·시험용)
+  // f: { source, view, cast:[{art, placement, fx?, anim?}], mask:{canvas}|null, look:{harmonize, shadow, grain, occlusion}, now, debugTint }
+  // 반환: 캐릭터별 { id, box(보기 정규), stats, params, gpu } (디버그·시험용)
   render(ctx, f) {
     const W = f.view.viewW;
     const H = f.view.viewH;
@@ -287,13 +359,27 @@ export class Compositor {
     for (const c of drawOrder(f.cast)) {
       const box = artBox(c.placement, c.art, aspect);
       const st = this.charState(c.art.id);
+      const fx = c.fx ?? NO_FX;
+      const tilt = c.placement.tilt ?? 0;
+      const turned = Math.abs(tilt) > 1e-3;
       this.updateStats(st, f, box, c.art);
-      const shadowBox = this.castShadow(ctx, c, box, W, H, f.look.shadow);
-      this.contactShadow(ctx, c, box, W, H, f.look.shadow * shadowLight(st.stats?.lum ?? 0.5));
-      this.soleShadow(ctx, c, box, W, H, f.look.shadow);
-      this.drawCharacter(ctx, st, c, box, f);
-      if (f.mask && f.look.occlusion && c.placement.front === 'person') this.occlude(ctx, f, box, shadowBox);
-      report.push({ id: c.art.id, box, stats: st.stats, whole: this.whole, params: st.prep?.params ?? null });
+      if (turned) {
+        // 발 지점을 축으로 그림자·캐릭터를 같이 돌린다(가림은 카메라 픽셀이라 돌리지 않는다)
+        ctx.save();
+        ctx.translate(box.fx * W, box.fy * H);
+        ctx.rotate(tilt);
+        ctx.translate(-box.fx * W, -box.fy * H);
+      }
+      const shadow = f.look.shadow * fx.shadow;
+      const shadowBox = this.castShadow(ctx, c, box, W, H, shadow);
+      this.contactShadow(ctx, c, box, W, H, shadow * shadowLight(st.stats?.lum ?? 0.5));
+      this.soleShadow(ctx, c, box, W, H, shadow);
+      if (fx.glow > 0) this.drawGlow(ctx, c, box, W, H, fx.glow * fx.alpha, GLOW.halo);
+      this.drawCharacter(ctx, st, c, box, f, fx);
+      if (fx.flash > 0) this.drawGlow(ctx, c, box, W, H, fx.flash, GLOW.flash);
+      if (turned) ctx.restore();
+      if (f.mask && f.look.occlusion && c.placement.front === 'person') this.occlude(ctx, f, box, shadowBox, tilt);
+      report.push({ id: c.art.id, box, stats: st.stats, whole: this.whole, params: st.prep?.params ?? null, gpu: !!st.prep?.gpu });
     }
     if (f.debugTint && f.mask) this.drawTint(ctx, f);
     this.photoGrain(ctx, W, H, f.look.grain);
@@ -427,22 +513,158 @@ export class Compositor {
     ctx.restore();
   }
 
-  drawCharacter(ctx, st, c, box, f) {
+  drawCharacter(ctx, st, c, box, f, fx = NO_FX) {
     const W = f.view.viewW;
     const H = f.view.viewH;
     const pw = Math.max(2, Math.round(box.w * W));
     const ph = Math.max(2, Math.round(box.h * H));
     const flip = c.placement.flip;
     const lookKey = `${f.look.harmonize}|${f.look.grain}`;
-    const prep = st.prep;
-    const since = f.now - (prep?.at ?? -Infinity);
-    const sizeChanged = !prep || Math.abs(prep.w - pw) > Math.max(1, pw * 0.01) || prep.flip !== flip;
-    const lookChanged =
-      !prep || prep.lookKey !== lookKey || statsChanged(st.applied, st.stats) || statsChanged(st.appliedWhole, this.whole);
-    if (this.still || !prep || (sizeChanged && since >= LOOK.resizeEvery) || (lookChanged && since >= LOOK.statsEvery)) {
-      this.prepare(st, c, box, f, pw, ph, lookKey);
+    const gpuOk = !this.still && this.gpu?.ok && c.anim?.ready;
+    // GPU(미리보기): 상자가 화면 밖으로 크게 나가면(카메라 가까이 선 AR 캐릭터) 보이는 부분만 칠한다. 위에서부터 드러나는 중(reveal<1)은 통째로
+    let sub = null;
+    if (gpuOk && fx.reveal >= 1) {
+      sub = visibleSub(box, c.placement.tilt ?? 0, W, H);
+      if (sub?.empty) return;
     }
-    ctx.drawImage(st.out, 0, 0, st.prep.w, st.prep.h, box.x0 * W, box.y0 * H, box.w * W, box.h * H);
+    const gpuDone = gpuOk && this.prepareGpu(st, c, box, f, pw, ph, lookKey, sub);
+    if (!gpuDone) {
+      const prep = st.prep;
+      const since = f.now - (prep?.at ?? -Infinity);
+      const sizeChanged = !prep || Math.abs(prep.w - pw) > Math.max(1, pw * 0.01) || prep.flip !== flip;
+      const lookChanged =
+        !prep || prep.lookKey !== lookKey || statsChanged(st.applied, st.stats) || statsChanged(st.appliedWhole, this.whole);
+      // 반복 영상 캐릭터였다가 PNG로 돌아온 경우(WebGL을 잃음)에도 다시 칠한다
+      if (this.still || !prep || prep.gpu || (sizeChanged && since >= LOOK.resizeEvery) || (lookChanged && since >= LOOK.statsEvery)) {
+        this.prepare(st, c, box, f, pw, ph, lookKey);
+      }
+    }
+    let src = st.out;
+    if (fx.reveal < 1) src = this.revealed(st, fx.reveal);
+    const s = st.prep.sub;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, fx.alpha));
+    if (s) ctx.drawImage(src, 0, 0, st.prep.w, st.prep.h, (box.x0 + s.x * box.w) * W, (box.y0 + s.y * box.h) * H, s.w * box.w * W, s.h * box.h * H);
+    else ctx.drawImage(src, 0, 0, st.prep.w, st.prep.h, box.x0 * W, box.y0 * H, box.w * W, box.h * H);
+    ctx.restore();
+  }
+
+  // 반복 영상 캐릭터(미리보기): 맞춤 값·빛 번짐 배경은 CPU 경로와 같은 때(장면·크기·자리가 바뀔 때, 초당 몇 번)만 다시 재고,
+  // 그림은 영상 새 프레임마다·크기가 바뀔 때마다 GPU로 칠한다. 못 하면 false(부르는 쪽이 PNG로 그린다).
+  // sub(상자 기준 0..1 사각, 없으면 통째로): 그 부분만 같은 해상도로 칠한다
+  prepareGpu(st, c, box, f, pw, ph, lookKey, sub = null) {
+    const art = c.art;
+    const flip = c.placement.flip;
+    const g = st.gprep;
+    const since = f.now - (g?.at ?? -Infinity);
+    const lookChanged = !g || g.lookKey !== lookKey || statsChanged(st.applied, st.stats) || statsChanged(st.appliedWhole, this.whole);
+    const moved =
+      !g || Math.abs(g.box.x0 - box.x0) > box.w * 0.05 || Math.abs(g.box.y0 - box.y0) > box.h * 0.05 || Math.abs(g.pw - pw) > pw * 0.05;
+    if (!g || (lookChanged && since >= LOOK.statsEvery) || (moved && since >= LOOK.resizeEvery)) {
+      const k = f.look.harmonize;
+      const scene = st.stats ?? art.stats;
+      const params = harmonizeParams(scene, art.stats, k, this.whole ?? scene);
+      const wrapA = Math.min(1, LOOK.wrapAlpha * k);
+      let wrapCanvas = null;
+      if (wrapA > 0) {
+        const tw = Math.max(2, Math.round(pw / LOOK.wrapShrink));
+        const th = Math.max(2, Math.round(ph / LOOK.wrapShrink));
+        st.wrapSrc = fit(st.wrapSrc ?? makeCanvas(), tw, th);
+        const tg = st.wrapSrc.getContext('2d');
+        tg.clearRect(0, 0, tw, th);
+        tg.imageSmoothingQuality = 'high';
+        drawRegion(tg, f.source, f.view, { x: box.x0, y: box.y0, w: box.w, h: box.h }, tw, th);
+        wrapCanvas = st.wrapSrc;
+      }
+      st.gprep = { at: f.now, lookKey, params, luts: buildLuts(params), wrapA, wrapCanvas, key: (g?.key ?? 0) + 1, box: { ...box }, pw };
+      st.applied = st.stats;
+      st.appliedWhole = this.whole;
+    }
+    const G = st.gprep;
+    const p = st.prep;
+    const rw = sub ? Math.max(2, Math.round(pw * sub.w)) : pw;
+    const rh = sub ? Math.max(2, Math.round(ph * sub.h)) : ph;
+    const sameSub = (a, b) => (!a && !b) || (a && b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h);
+    if (p?.gpu && p.frame === c.anim.frameId && p.w === rw && p.h === rh && p.key === G.key && p.flip === flip && sameSub(p.sub, sub)) return true; // 그대로
+    const r = this.gpu.render(c.anim, rw, rh, {
+      sub,
+      luts: G.luts,
+      lutKey: G.key,
+      sat: G.params.sat,
+      wrapAlpha: G.wrapA,
+      wrapCanvas: G.wrapCanvas,
+      wrapKey: G.key,
+      edgeCanvas: art.edge,
+      grain: f.look.grain > 0 ? LOOK.artGrain * f.look.grain : 0,
+      softness: LOOK.softness,
+      flip,
+      noise: this.noise.canvas,
+    });
+    if (!r) return false;
+    const og = fitAtLeast(st.out, rw, rh).getContext('2d');
+    og.clearRect(0, 0, rw, rh);
+    og.drawImage(r.canvas, r.sx, r.sy, r.w, r.h, 0, 0, rw, rh);
+    st.prep = { w: rw, h: rh, sub, flip, at: f.now, params: G.params, lookKey, gpu: true, frame: c.anim.frameId, key: G.key };
+    return true;
+  }
+
+  // 위에서부터 reveal 비율만큼만 보이게(아래 끝은 부드럽게). 걸어 나오기 첫머리: 포스터에서 벗겨지듯 드러난다
+  revealed(st, reveal) {
+    const w = st.prep.w;
+    const h = st.prep.h;
+    const c = fitAtLeast(this.rev, w, h); // reveal<1이면 sub 없이 통째로 칠해 둔 것이다(drawCharacter)
+    const g = c.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+    g.clearRect(0, 0, c.width, c.height);
+    g.drawImage(st.out, 0, 0, w, h, 0, 0, w, h);
+    const feather = 0.18;
+    const edge = Math.max(0, reveal) * (1 + feather) * h;
+    const grad = g.createLinearGradient(0, edge - feather * h, 0, edge);
+    grad.addColorStop(0, 'rgba(0,0,0,1)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.globalCompositeOperation = 'destination-in';
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'source-over';
+    return c;
+  }
+
+  // 걸어 나오기 빛: 실루엣을 작게 줄였다 키운 따뜻한 흰 빛을 더하기(lighter)로 얹는다. kind: GLOW.halo | GLOW.flash
+  drawGlow(ctx, c, box, W, H, amount, kind) {
+    let gc = this.glows.get(c.art);
+    if (!gc) {
+      // 둘레에 여백(PAD)을 두고 작게 그린다: 여백이 없으면 빛이 그림 판 끝(발밑)에서 반듯하게 잘렸다
+      const sil = c.art.silhouette;
+      const sw = Math.max(2, Math.round(sil.width / GLOW.shrink));
+      const sh = Math.max(2, Math.round(sil.height / GLOW.shrink));
+      const px = Math.ceil(sw * GLOW.pad);
+      const py = Math.ceil(sh * GLOW.pad);
+      gc = makeCanvas(sw + 2 * px, sh + 2 * py);
+      const g = gc.getContext('2d');
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(sil, px, py, sw, sh);
+      g.globalCompositeOperation = 'source-in';
+      g.fillStyle = GLOW.tint;
+      g.fillRect(0, 0, gc.width, gc.height);
+      gc.padX = px / sw;
+      gc.padY = py / sh;
+      this.glows.set(c.art, gc);
+    }
+    const w = box.w * W * kind.scale * (1 + 2 * gc.padX);
+    const h = box.h * H * kind.scale * (1 + 2 * gc.padY);
+    const cx = (box.x0 + box.w / 2) * W;
+    const cy = (box.y0 + box.h / 2) * H;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = Math.min(1, amount * kind.alpha);
+    if (c.placement.flip) {
+      ctx.translate(cx, 0);
+      ctx.scale(-1, 1);
+      ctx.translate(-cx, 0);
+    }
+    ctx.drawImage(gc, cx - w / 2, cy - h / 2, w, h);
+    ctx.restore();
   }
 
   // 캐릭터를 이번 크기·장면에 맞춰 칠해 둔다(보기 방향으로, 좌우 반전 포함)
@@ -515,14 +737,25 @@ export class Compositor {
     st.appliedWhole = this.whole;
   }
 
-  // 사람 가림: 캐릭터 상자(+그림자 범위) 안에서만, 사람 마스크 자리의 카메라 픽셀을 다시 그린다
-  occlude(ctx, f, box, shadowBox) {
+  // 사람 가림: 캐릭터 상자(+그림자 범위) 안에서만, 사람 마스크 자리의 카메라 픽셀을 다시 그린다. tilt면 돌린 범위를 감싼다
+  occlude(ctx, f, box, shadowBox, tilt = 0) {
     const W = f.view.viewW;
     const H = f.view.viewH;
-    const x0 = Math.max(0, Math.floor(Math.min(box.x0 * W, shadowBox.x)));
-    const y0 = Math.max(0, Math.floor(Math.min(box.y0 * H, shadowBox.y)));
-    const x1 = Math.min(W, Math.ceil(Math.max(box.x1 * W, shadowBox.x + shadowBox.w)));
-    const y1 = Math.min(H, Math.ceil(Math.max(box.y1 * H, shadowBox.y + shadowBox.h)));
+    let ux0 = Math.min(box.x0 * W, shadowBox.x);
+    let uy0 = Math.min(box.y0 * H, shadowBox.y);
+    let ux1 = Math.max(box.x1 * W, shadowBox.x + shadowBox.w);
+    let uy1 = Math.max(box.y1 * H, shadowBox.y + shadowBox.h);
+    if (Math.abs(tilt) > 1e-3) {
+      const r = rotatedBounds({ x: ux0, y: uy0, w: ux1 - ux0, h: uy1 - uy0 }, box.fx * W, box.fy * H, tilt);
+      ux0 = r.x;
+      uy0 = r.y;
+      ux1 = r.x + r.w;
+      uy1 = r.y + r.h;
+    }
+    const x0 = Math.max(0, Math.floor(ux0));
+    const y0 = Math.max(0, Math.floor(uy0));
+    const x1 = Math.min(W, Math.ceil(ux1));
+    const y1 = Math.min(H, Math.ceil(uy1));
     const rw = x1 - x0;
     const rh = y1 - y0;
     if (rw <= 0 || rh <= 0) return;

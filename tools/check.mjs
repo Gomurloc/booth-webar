@@ -5,7 +5,7 @@
 // - landing     첫 화면, 가로 넘침 없음
 // - nojs        스크립트가 꺼져도 첫 화면에 세 게임 링크가 있는지
 // - inapp       카카오톡 안 브라우저(UA)면 바깥 브라우저로 여는 안내가 뜨는지
-// - otr         포스터 인식 → 카드 → 사진 앱으로(허브가 카메라를 놓았는지, 사진 앱이 카메라를 켰는지) → "다른 게임"으로 허브
+// - otr         포스터 인식 → 카드 → 사진 앱 포스터 AR(otr/?ar=1)로(허브가 카메라를 놓았는지, 사진 앱이 카메라를 켰는지) → "다른 게임"으로 허브
 // - dont        포스터 인식 → 카드 → 포스터 위 영상(재생 중) → 포스터를 놓침(가운데 보기) → 끝 → 다른 게임
 // - all6        ?targets=all6 로 사용금지 포스터 인식
 // - unmute      포스터 인식 → 카드 → 테스트 끝까지 → 결과 카드 PNG 저장(내려받기), 공유 시트 경로도
@@ -71,7 +71,7 @@ async function launch(cam, { fakeUi = true } = {}) {
 
 async function newPage(browser, rec, init, opts = {}) {
   const context = await browser.newContext({ ...PHONE, acceptDownloads: true, ...opts });
-  if (init) await context.addInitScript(init);
+  for (const f of [].concat(init ?? [])) await context.addInitScript(f);
   const page = await context.newPage();
   page.on('console', (m) => {
     const t = m.type();
@@ -90,6 +90,37 @@ async function shot(page, rec, name) {
 }
 
 const hub = (page, expr, a) => page.evaluate(expr, a);
+
+// 카메라를 켜고 끈 차례를 페이지를 옮겨 다녀도 남게(sessionStorage) 적는다: 허브가 카메라를 놓은 뒤에 다음 페이지가 여는지.
+// (예전에는 클릭 직후 허브 트랙 수를 셌는데, 이동과 겹쳐 1로 남아 카메라를 안 놓는 것처럼 보였다)
+function camLog() {
+  const K = '__camlog';
+  const push = (what) => {
+    try {
+      const a = JSON.parse(sessionStorage.getItem(K) || '[]');
+      a.push({ what, t: Date.now(), page: location.pathname + location.search });
+      sessionStorage.setItem(K, JSON.stringify(a));
+    } catch {}
+  };
+  const md = navigator.mediaDevices;
+  const gum = md?.getUserMedia?.bind(md);
+  if (gum) md.getUserMedia = (c) => (push('open'), gum(c));
+  const stop = MediaStreamTrack.prototype.stop;
+  MediaStreamTrack.prototype.stop = function () {
+    if (this.kind === 'video' && this.readyState === 'live') push('stop');
+    return stop.call(this);
+  };
+}
+const readCamLog = (page) => page.evaluate(() => JSON.parse(sessionStorage.getItem('__camlog') || '[]'));
+// 허브('/')에서 마지막으로 카메라를 놓은 때가 다음 페이지(nextPage로 시작하는 주소)에서 처음 연 때보다 앞서나
+function hubReleasedFirst(log, nextPage) {
+  const stops = log.filter((e) => e.page === '/' && e.what === 'stop');
+  const opens = log.filter((e) => e.page.startsWith(nextPage) && e.what === 'open');
+  if (!stops.length) return { ok: false, why: '허브가 카메라를 놓지 않음' };
+  if (!opens.length) return { ok: true, gapMs: null };
+  const gapMs = opens[0].t - stops[stops.length - 1].t;
+  return { ok: gapMs >= 0, gapMs };
+}
 
 async function waitState(page, states, timeout = 60_000) {
   const list = [].concat(states);
@@ -188,7 +219,7 @@ const scenarios = {
   },
 
   async otr(browser, rec) {
-    const { page, context } = await newPage(browser, rec);
+    const { page, context } = await newPage(browser, rec, camLog);
     await startScan(page, rec);
     await shot(page, rec, 'otr-1-scanning');
     rec.cardMs = await waitCard(page, 'otr');
@@ -196,10 +227,11 @@ const scenarios = {
     await shot(page, rec, 'otr-2-card');
     rec.hubTracksBefore = await hub(page, () => window.__hub.cameraTracks());
     await page.locator('#card-open').click();
-    // 클릭 직후(이동 전 250ms 사이) 허브 카메라가 꺼졌는지
-    rec.hubTracksAfterClick = await hub(page, () => window.__hub.cameraTracks()).catch(() => 'navigated');
-    await page.waitForURL(/\/otr\/$/, { timeout: 10_000 });
+    await page.waitForURL(/\/otr\/\?ar=1$/, { timeout: 10_000 }); // 포스터 카드에서는 사진 앱 포스터 AR
     await page.waitForFunction(() => window.__booth?.ready === true, null, { timeout: 60_000 });
+    // 허브가 카메라를 놓은 뒤에 사진 앱이 카메라를 열었는지
+    rec.hubReleasedFirst = hubReleasedFirst(await readCamLog(page), '/otr/');
+    if (!rec.hubReleasedFirst.ok) throw new Error('허브가 카메라를 놓기 전에 사진 앱이 열었다: ' + JSON.stringify(rec.hubReleasedFirst));
     await sleep(2500);
     rec.otrCamera = await page.evaluate(() => {
       const v = document.getElementById('카메라');
@@ -283,17 +315,20 @@ const scenarios = {
 
   async unmute(browser, rec) {
     // 내려받기 경로를 보려고 공유 API를 없앤다(데스크톱 크롬은 공유 시트가 있어 멈출 수 있다)
-    const { page, context } = await newPage(browser, rec, () => {
-      Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true });
-      Object.defineProperty(navigator, 'share', { value: undefined, configurable: true });
-    });
+    const { page, context } = await newPage(browser, rec, [
+      camLog,
+      () => {
+        Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true });
+        Object.defineProperty(navigator, 'share', { value: undefined, configurable: true });
+      },
+    ]);
     await startScan(page, rec);
     rec.cardMs = await waitCard(page, 'unmute');
     await sleep(300);
     await shot(page, rec, 'unmute-1-card');
     await page.locator('#card-open').click();
-    rec.hubTracksAfterClick = await hub(page, () => window.__hub.cameraTracks()).catch(() => 'navigated');
     await page.waitForURL(/\/unmute\/$/, { timeout: 10_000 });
+    rec.hubReleasedFirst = hubReleasedFirst(await readCamLog(page), '/unmute/'); // 이 페이지는 카메라를 안 연다: 허브가 놓았는지만
     await page.waitForFunction(() => window.__unmute?.screen === 'intro', null, { timeout: 15_000 });
     await page.evaluate(() => document.fonts.ready);
     await sleep(500);
@@ -567,7 +602,7 @@ const scenarios = {
     await page.locator('#start').click();
     await waitCard(page, 'otr');
     await page.locator('#card-open').click();
-    await page.waitForURL(/\/otr\/$/, { timeout: 10_000 });
+    await page.waitForURL(/\/otr\/\?ar=1$/, { timeout: 10_000 });
     await page.waitForFunction(() => window.__booth?.ready === true, null, { timeout: 60_000 });
     await page.goBack();
     await page.waitForURL(BASE + '/', { timeout: 10_000 });

@@ -27,7 +27,52 @@ export function defaultSettings(mode) {
     placements: { landscape: {}, portrait: {} },
     // 저장된 배치가 맞춰진 보이는 자르기(영상 비율). 화면 비율이 바뀌면 이 기준으로 배치를 장면에 붙여 옮긴다
     placementCrop: { landscape: null, portrait: null },
+    // 포스터 AR(?ar=1, 폰)을 이 폰에서만 덮어쓰는 값(직원 설정창). null이면 캐릭터.json의 ar(모든 손님 폰이 받는 값), 그것도 없으면 AR_DEFAULTS.
+    // 캐릭터별 키·좌우 자리는 바꾼 것만 chars[id]에 둔다(기본값은 캐릭터.json 캐릭터마다의 ar)
+    ar: { posterHeight: null, standOff: null, posterWidth: null, fov: null, chars: {} },
   };
+}
+
+// 포스터 AR 기본값(미터·도). fov: 폰 카메라 긴 변 화각. 인식기 초점 거리와 자이로 보정에 같이 쓴다
+export const AR_DEFAULTS = { posterHeight: 1.4, standOff: 0.4, posterWidth: 0.5, fov: 63 };
+
+// 포스터 AR 값 범위
+export const AR_LIMITS = {
+  posterHeight: [0.8, 2.5],
+  standOff: [0, 2],
+  posterWidth: [0.2, 1.5],
+  fov: [40, 100],
+  height: [0.8, 2.4],
+  offset: [-3, 3],
+};
+
+function sanitizeAr(raw, d) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  const chars = {};
+  if (r.chars && typeof r.chars === 'object') {
+    for (const [id, c] of Object.entries(r.chars)) {
+      if (!c || typeof c !== 'object') continue;
+      const o = {};
+      if (typeof c.height === 'number' && Number.isFinite(c.height)) o.height = num(c.height, ...AR_LIMITS.height, 1.6);
+      if (typeof c.offset === 'number' && Number.isFinite(c.offset)) o.offset = num(c.offset, ...AR_LIMITS.offset, 0);
+      if (Object.keys(o).length) chars[id.slice(0, 40)] = o;
+    }
+  }
+  return {
+    posterHeight: num(r.posterHeight, ...AR_LIMITS.posterHeight, d.posterHeight),
+    standOff: num(r.standOff, ...AR_LIMITS.standOff, d.standOff),
+    posterWidth: num(r.posterWidth, ...AR_LIMITS.posterWidth, d.posterWidth),
+    fov: num(r.fov, ...AR_LIMITS.fov, d.fov),
+    chars,
+  };
+}
+
+// 캐릭터.json의 ar(배포 값)을 믿을 수 있게: 범위 밖·숫자 아님은 버린다(그 칸은 AR_DEFAULTS)
+export function sanitizeArWorld(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  const out = {};
+  for (const k of Object.keys(AR_DEFAULTS)) out[k] = num(r[k], ...AR_LIMITS[k], AR_DEFAULTS[k]);
+  return out;
 }
 
 // 자르기 사각 {x,y,w,h}(0..1)만 믿는다
@@ -74,6 +119,7 @@ export function sanitizeSettings(raw, mode) {
     cast: Array.isArray(r.cast) && r.cast.every((x) => typeof x === 'string') && r.cast.length ? r.cast : d.cast,
     placements,
     placementCrop: { landscape: cropOrNull(r.placementCrop?.landscape), portrait: cropOrNull(r.placementCrop?.portrait) },
+    ar: sanitizeAr(r.ar, d.ar),
   };
 }
 

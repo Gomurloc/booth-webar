@@ -1,0 +1,29 @@
+/* 허브(booth-webar)에서 덧붙임: 포스터 AR(?ar=1) 모양. 원래 사진 앱의 스타일.css는 그대로 둔다 */
+
+/* AR이 아닐 때(원래 사진 앱, 포스터 없이로 넘어감) AR 단추·설정은 숨긴다 */
+body:not([data-ar="on"]) .AR만 { display: none !important; }
+
+/* AR에서는 자리를 세계가 정한다: 끌어 옮기기·옆에 세우기·좌우 반전·앞뒤 단추는 숨긴다 */
+body[data-ar="on"] #옆에세우기,
+body[data-ar="on"] #좌우반전,
+body[data-ar="on"] #앞뒤 { display: none !important; }
+
+/* 안내는 한 줄로(left 50% 자리라 폭이 화면 절반으로 줄어 "포스터 전체가 보이게 비춰 주세요"가 두 줄이 됐다. 최대 폭은 스타일.css 그대로) */
+body[data-ar="on"] .도움말 { width: max-content; }
+/* 안내 한 줄: 포스터를 찾는 동안은 조금 더 또렷하게 */
+body[data-ar="on"][data-ar-status="scanning"] .도움말,
+body[data-ar="on"][data-ar-status="loading"] .도움말 { background: var(--glass-strong); }
+
+/* 설정: 캐릭터별 키·좌우 자리 두 칸씩 */
+.AR캐릭터 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.AR캐릭터 label { font-size: 13px; }
+body[data-ar="on"] .설정창 label:has([data-key="autoHeight"]) { display: none; } /* 옆에 세우기는 AR에 없다 */
+.AR안내 { margin: 4px 0 0; font-size: 12px; line-height: 1.5; color: var(--ash); }
+.AR값 {
+  margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--glass); border: 1px solid var(--line);
+  font: 11px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; user-select: all; -webkit-user-select: all;
+}
+#AR기본값 { justify-self: start; }
+/* 움직임 허용(iOS 자이로): 다른 AR 단추보다 눈에 띄게 */
+#움직임허용 { background: rgb(var(--ash-rgb) / 0.92); color: var(--black); border-color: transparent; }
+#움직임허용[hidden] { display: none; }

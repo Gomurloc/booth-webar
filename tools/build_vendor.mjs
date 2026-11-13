@@ -33,8 +33,9 @@ const resolver = {
   enforce: 'pre',
   resolveId(id) {
     if (id === 'three') return SHIM;
-    if (id.startsWith('three/addons/')) return path.join(NM, 'three', 'examples', 'jsm', id.slice('three/addons/'.length));
-    if (id.startsWith('mind-ar/')) return path.join(NM, id);
+    // 경로는 / 로 맞춘다: vite가 상대 import('./controller-*.js')를 / 경로로 풀어서, \ 경로로 돌려주면 같은 파일이 두 번 묶인다
+    if (id.startsWith('three/addons/')) return path.join(NM, 'three', 'examples', 'jsm', id.slice('three/addons/'.length)).replaceAll('\\', '/');
+    if (id.startsWith('mind-ar/')) return path.join(NM, id).replaceAll('\\', '/');
     return null;
   },
   load(id) {

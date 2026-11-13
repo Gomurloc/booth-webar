@@ -2,6 +2,7 @@
 // - line: 포스터에 적힌 장르·소개 문구(그대로 옮김)
 // - what: 이 허브에서 열리는 콘텐츠 설명
 // - href: 다른 페이지로 가는 콘텐츠(가기 전에 허브가 카메라를 놓는다). 없으면 허브 안에서 연다(사용금지 영상)
+// - arHref: 포스터를 알아본 카드에서 열 때의 주소(사진 앱 포스터 AR). 직접 고르기 단추는 href(포스터 없이 쓰는 원래 사진 앱)
 
 export const GAMES = {
   otr: {
@@ -12,6 +13,7 @@ export const GAMES = {
     open: '사진 찍으러 가기',
     thumb: 'img/otr.jpg',
     href: 'otr/',
+    arHref: 'otr/?ar=1',
   },
   dont: {
     id: 'dont',

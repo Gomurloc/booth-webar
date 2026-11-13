@@ -13,9 +13,11 @@
 <link rel="stylesheet" href="스타일.css">
 <!-- 허브(booth-webar)에서 덧붙임: 허브로 돌아가는 링크 모양 -->
 <link rel="stylesheet" href="허브링크.css">
+<!-- 허브(booth-webar)에서 덧붙임: 포스터 AR(?ar=1) 단추·설정 -->
+<link rel="stylesheet" href="AR.css">
 <script type="module" src="앱.js"></script>
 </head>
-<body data-mode="phone" data-state="loading" data-edit="off" data-seg="off">
+<body data-mode="phone" data-state="loading" data-edit="off" data-seg="off" data-ar="off">
 <main id="무대">
   <!-- iOS: 카메라 video는 숨기면(display:none) 캔버스에 검게 그려진다. 캔버스 아래에 깔아 둔다 -->
   <video id="카메라" autoplay muted playsinline aria-hidden="true"></video>
@@ -46,6 +48,11 @@
       <button id="좌우반전" class="알약" type="button">좌우 반전</button>
       <button id="앞뒤" class="알약" type="button">사람이 앞</button>
       <button id="잠금" class="알약" type="button">배치 잠금</button>
+      <!-- 포스터 AR(?ar=1)에서만 보인다: 다시 불러오기(잡은 자리를 잊고 다시 걸어 나오게), 포스터 없이(원래 사진 앱처럼) -->
+      <!-- iOS에서 자이로 허락이 없을 때만 보인다(포스터를 가린 동안 캐릭터를 제자리에 두는 데 쓴다) -->
+      <button id="움직임허용" class="알약 AR만" type="button" hidden>움직임 허용</button>
+      <button id="다시불러오기" class="알약 AR만" type="button">다시 불러오기</button>
+      <button id="포스터없이" class="알약 AR만" type="button">포스터 없이</button>
     </div>
     <div id="배역" class="배역" role="radiogroup" aria-label="함께 찍을 캐릭터"></div>
     <button id="틀칩" class="알약 작게" type="button">그대로</button>
@@ -114,6 +121,17 @@
       <label>입자감 <input data-key="grain" data-type="number" type="range" min="0" max="2" step="0.1"></label>
       <label class="줄 사람인식만">사람이 앞에 서면 캐릭터 가리기 <input data-key="occlusion" type="checkbox"></label>
       <label class="사람인식만">옆에 세우기 키 비율(사람 키 = 1) <input data-key="autoHeight" data-type="number" type="range" min="0.7" max="1.3" step="0.05"></label>
+    </fieldset>
+    <fieldset class="AR만">
+      <legend>포스터 AR</legend>
+      <label>포스터 가운데 높이(m, 바닥에서) <input data-ar="posterHeight" type="number" min="0.8" max="2.5" step="0.05" inputmode="decimal"></label>
+      <label>캐릭터가 선 자리(m, 벽에서) <input data-ar="standOff" type="number" min="0" max="2" step="0.05" inputmode="decimal"></label>
+      <div id="AR캐릭터" class="AR캐릭터"></div>
+      <label>포스터 폭(m, 인쇄물) <input data-ar="posterWidth" type="number" min="0.2" max="1.5" step="0.005" inputmode="decimal"></label>
+      <label>카메라 화각(긴 변, 도) <input data-ar="fov" type="number" min="40" max="100" step="1" inputmode="numeric"></label>
+      <p class="AR안내">여기서 바꾼 값은 이 폰에만 저장돼요. 손님 폰에도 쓰려면 아래 값을 <code>otr/캐릭터/캐릭터.json</code>에 옮겨 다시 올려 주세요.</p>
+      <pre id="AR값" class="AR값"></pre>
+      <button id="AR기본값" class="알약 작게" type="button">이 폰 값 지우기</button>
     </fieldset>
     <fieldset>
       <legend>사진 글자</legend>
