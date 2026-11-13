@@ -1,0 +1,111 @@
+{
+  "status": "시안 — UNMUTE 팀 확인 전",
+  "about": "UNMUTE 부스용 성향 테스트 시안. 질문·답·결과 글·점수는 모두 이 파일에서 고친다. 고치는 법은 저장소 README의 UNMUTE 테스트 고치기. 방문객 화면에는 시안 표시가 없다. 주소 끝에 ?draft=1을 붙이면 status에 시안이 있는 동안 오른쪽 위에 시안 표시가 뜬다(팀 확인용).",
+  "intro": {
+    "kicker": "웹캠 기반 스토리형 리듬 게임",
+    "headline": "음악과 감정이 사라진 흑백의 세상에서,\n주인공과 에코가 음악으로 세상에 빛을 되찾는 이야기",
+    "title": "나는 뉴크롬에 어떤 빛을 되찾아 줄까?",
+    "lead": "음악과 감정이 통제된 흑백 도시, ‘뉴크롬’.\n질문 6개에 답하면 도시에 되찾아 줄\n색과 소리를 알려 줘요.",
+    "start": "테스트 시작"
+  },
+  "types": [
+    {
+      "id": "magenta",
+      "name": "마젠타 비트",
+      "emotion": "설렘",
+      "color": "#ff3fb4",
+      "description": "음악이 시작되면 몸이 먼저 반응하는 사람.\n멈춰 있던 거리에 다시 뛰는 박동을 돌려줘요."
+    },
+    {
+      "id": "cyan",
+      "name": "시안 멜로디",
+      "emotion": "위로",
+      "color": "#3fe0ff",
+      "description": "곁에서 같은 노래를 들어 주는 사람.\n차가운 도시에 맑은 숨을 불어넣어요."
+    },
+    {
+      "id": "violet",
+      "name": "바이올렛 베이스",
+      "emotion": "몰입",
+      "color": "#a77bff",
+      "description": "소리 깊은 곳까지 파고드는 사람.\n아무도 몰랐던 울림으로 밤을 물들여요."
+    },
+    {
+      "id": "amber",
+      "name": "앰버 코러스",
+      "emotion": "함께",
+      "color": "#ffb547",
+      "description": "모두를 한 목소리로 묶는 사람.\n꺼져 있던 창문마다 불을 켜요."
+    }
+  ],
+  "questions": [
+    {
+      "text": "음악도 색도 사라진 회색 도시.\n가장 먼저 되찾고 싶은 건?",
+      "answers": [
+        { "text": "심장을 뛰게 하는 비트", "type": "magenta" },
+        { "text": "마음을 달래 주던 노래 한 곡", "type": "cyan" },
+        { "text": "다 같이 부르던 떼창", "type": "amber" },
+        { "text": "이어폰 속 나만의 세계", "type": "violet" }
+      ]
+    },
+    {
+      "text": "이어폰을 꽂으면\n가장 먼저 트는 곡은?",
+      "answers": [
+        { "text": "가사가 오래 남는 잔잔한 곡", "type": "cyan" },
+        { "text": "첫 박부터 터지는 신나는 곡", "type": "magenta" },
+        { "text": "볼륨을 끝까지 올리는 묵직한 곡", "type": "violet" },
+        { "text": "누구나 아는 노래", "type": "amber" }
+      ]
+    },
+    {
+      "text": "음악이 통제된 거리,\n어디선가 작은 멜로디가 들린다.",
+      "answers": [
+        { "text": "눈을 감고 소리에만 집중한다", "type": "violet" },
+        { "text": "옆 사람에게 \"들려?\" 하고 묻는다", "type": "amber" },
+        { "text": "나도 모르게 리듬을 탄다", "type": "magenta" },
+        { "text": "누가 부르는지 조용히 찾아간다", "type": "cyan" }
+      ]
+    },
+    {
+      "text": "마음이 가라앉은 날,\n나를 다시 일으키는 건?",
+      "answers": [
+        { "text": "같이 웃어 주는 사람", "type": "amber" },
+        { "text": "혼자 깊이 빠져드는 시간", "type": "violet" },
+        { "text": "내 마음을 알아주는 한 줄 가사", "type": "cyan" },
+        { "text": "몸을 움직이게 하는 리듬", "type": "magenta" }
+      ]
+    },
+    {
+      "text": "디제잉 부스에 섰다.\n내가 만들고 싶은 순간은?",
+      "answers": [
+        { "text": "비트를 떨어뜨려 모두가 뛰는 순간", "type": "magenta" },
+        { "text": "아무도 예상 못 한 소리를 섞는 순간", "type": "violet" },
+        { "text": "조용한 곡으로 숨을 고르는 순간", "type": "cyan" },
+        { "text": "모두가 함께 따라 부르는 순간", "type": "amber" }
+      ]
+    },
+    {
+      "text": "흑백 도시에 딱 한 가지 색을\n칠할 수 있다면?",
+      "answers": [
+        { "text": "맑은 새벽 같은 청록", "type": "cyan" },
+        { "text": "창문 불빛 같은 주황", "type": "amber" },
+        { "text": "뛰는 심장 같은 분홍", "type": "magenta" },
+        { "text": "깊은 밤 같은 보라", "type": "violet" }
+      ]
+    }
+  ],
+  "scoring": {
+    "method": "답마다 type에 1점(또는 scores에 적은 점수). 가장 높은 결과가 나온다.",
+    "tieBreak": "latest"
+  },
+  "result": {
+    "label": "내가 뉴크롬에 되찾아 줄 빛",
+    "save": "이미지 저장하기",
+    "saveHint": "이미지를 길게 눌러도 저장돼요",
+    "retry": "다시 하기"
+  },
+  "card": {
+    "footerLeft": "UNMUTE — THE VIVID WORLD",
+    "footerRight": "웹캠 기반 스토리형 리듬 게임 · MP3"
+  }
+}

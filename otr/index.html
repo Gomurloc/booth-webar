@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#06070a">
+<meta name="color-scheme" content="dark">
+<title>OFF THE RECORD 부스 사진</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="스타일.css">
+<!-- 허브(booth-webar)에서 덧붙임: 허브로 돌아가는 링크 모양 -->
+<link rel="stylesheet" href="허브링크.css">
+<script type="module" src="앱.js"></script>
+</head>
+<body data-mode="phone" data-state="loading" data-edit="off" data-seg="off">
+<main id="무대">
+  <!-- iOS: 카메라 video는 숨기면(display:none) 캔버스에 검게 그려진다. 캔버스 아래에 깔아 둔다 -->
+  <video id="카메라" autoplay muted playsinline aria-hidden="true"></video>
+  <canvas id="화면" aria-label="카메라 미리보기와 캐릭터"></canvas>
+
+  <header class="윗줄">
+    <div id="워드마크" class="워드마크">OFF THE RECORD</div>
+    <div class="윗줄-오른쪽">
+      <figure id="큐알" class="큐알" hidden>
+        <canvas id="큐알그림" aria-label="내 폰으로 찍기 QR 코드"></canvas>
+        <figcaption>내 폰으로 찍기</figcaption>
+      </figure>
+      <!-- 허브(booth-webar)에서 덧붙임: 허브 첫 화면으로. 폰 모드에서만 보인다 -->
+      <a id="허브로" class="알약 작게 허브링크" href="../" aria-label="다른 게임 고르기"><span class="허브링크-화살표" aria-hidden="true">←</span><svg class="허브링크-격자" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg><span class="허브링크-글">다른 게임</span></a>
+      <button id="설정버튼" class="둥근단추" type="button" aria-label="설정" aria-controls="설정창" aria-expanded="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4Z"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.4 7.4 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 2.6-1.5l2.4 1 2-3.4-2-1.6Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <p id="도움말" class="도움말" hidden>캐릭터를 끌어 옮기고, 두&nbsp;손가락으로 크기를 바꿔요</p>
+
+  <!-- 칸 배치는 스타일.css의 grid-template-areas가 모드(폰·부스)마다 정한다.
+       폰은 사진 밖 검은 띠(세로는 아래, 가로는 오른쪽)라 발과 발밑 그림자를 가리지 않는다 -->
+  <section class="아래" aria-label="촬영">
+    <div id="편집도구" class="편집도구" role="toolbar" aria-label="캐릭터 배치">
+      <button id="옆에세우기" class="알약" type="button">옆에 세우기</button>
+      <button id="좌우반전" class="알약" type="button">좌우 반전</button>
+      <button id="앞뒤" class="알약" type="button">사람이 앞</button>
+      <button id="잠금" class="알약" type="button">배치 잠금</button>
+    </div>
+    <div id="배역" class="배역" role="radiogroup" aria-label="함께 찍을 캐릭터"></div>
+    <button id="틀칩" class="알약 작게" type="button">그대로</button>
+    <button id="셔터" class="셔터" type="button" aria-label="사진 찍기"><span></span></button>
+    <button id="카메라전환" class="둥근단추" type="button" aria-label="앞뒤 카메라 바꾸기">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-2.5h6L17 8h3v11H4Z"/><path d="M9.2 12.2a3 3 0 0 1 5.3-1.4M14.8 14.6a3 3 0 0 1-5.3 1.4"/><path d="M14.6 9.2v1.8h-1.8M9.4 17v-1.8h1.8"/></svg>
+    </button>
+    <p id="직원안내" class="직원안내"><kbd>Space</kbd> 촬영 <kbd>F</kbd> 전체 화면 <kbd>S</kbd> 설정 <kbd>L</kbd> <span id="잠금안내">배치 잠금</span></p>
+  </section>
+
+  <div id="카운트" class="카운트" aria-live="assertive"></div>
+  <div id="플래시" class="플래시"></div>
+  <p id="로딩" class="로딩" role="status">카메라 켜는 중…</p>
+  <pre id="디버그" class="디버그" hidden></pre>
+</main>
+
+<!-- 알림은 결과 화면·설정창보다 위에 보이도록 무대 밖에 둔다 -->
+<p id="알림" class="알림" role="status" hidden></p>
+
+<section id="결과" class="결과" aria-label="찍은 사진" tabindex="-1" hidden>
+  <div class="결과-사진"><img id="결과사진" alt="찍은 사진"></div>
+  <div class="결과-아래">
+    <div id="틀고르기" class="틀고르기" role="radiogroup" aria-label="사진 틀"></div>
+    <div class="결과-단추">
+      <button id="저장" class="알약 큰" type="button">저장</button>
+      <button id="인쇄" class="알약 큰" type="button">인쇄</button>
+      <button id="다시찍기" class="알약 큰 옅게" type="button">다시 찍기</button>
+    </div>
+    <p id="결과안내" class="결과안내"></p>
+  </div>
+</section>
+
+<section id="오류" class="오류" role="alertdialog" aria-labelledby="오류제목" aria-describedby="오류설명" hidden>
+  <h2 id="오류제목"></h2>
+  <p id="오류설명"></p>
+  <button id="다시시도" class="알약 큰" type="button">다시 시도</button>
+</section>
+
+<aside id="설정창" class="설정창" aria-label="설정" hidden>
+  <header>
+    <h2>설정</h2>
+    <button id="설정닫기" class="둥근단추" type="button" aria-label="설정 닫기">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </header>
+  <form id="설정폼">
+    <fieldset>
+      <legend>카메라</legend>
+      <label>카메라 <select data-key="cameraId" id="카메라목록"><option value="">기본 카메라</option></select></label>
+      <label>해상도 <select data-key="resolution"><option value="1080">1080p</option><option value="4k">4K</option></select></label>
+      <label>거울처럼 좌우 반전
+        <select data-key="mirror"><option value="auto">자동 (앞 카메라만)</option><option value="on">켜기</option><option value="off">끄기</option></select>
+      </label>
+    </fieldset>
+    <fieldset>
+      <legend>촬영</legend>
+      <label>카운트다운 <select data-key="countdown" data-type="number"><option value="3">3초</option><option value="5">5초</option><option value="10">10초</option></select></label>
+      <label>기본 틀 <select data-key="frame" id="기본틀"></select></label>
+      <label class="부스만">처음 화면으로 돌아가기(초) <input data-key="idleSeconds" data-type="number" type="number" min="10" max="600" step="5"></label>
+      <label class="줄">소리 <input data-key="sound" type="checkbox"></label>
+    </fieldset>
+    <fieldset>
+      <legend>사진처럼 보이기</legend>
+      <label>색 맞춤 <input data-key="harmonize" data-type="number" type="range" min="0" max="1" step="0.05"></label>
+      <label>그림자 <input data-key="shadow" data-type="number" type="range" min="0" max="1.5" step="0.05"></label>
+      <label>입자감 <input data-key="grain" data-type="number" type="range" min="0" max="2" step="0.1"></label>
+      <label class="줄 사람인식만">사람이 앞에 서면 캐릭터 가리기 <input data-key="occlusion" type="checkbox"></label>
+      <label class="사람인식만">옆에 세우기 키 비율(사람 키 = 1) <input data-key="autoHeight" data-type="number" type="range" min="0.7" max="1.3" step="0.05"></label>
+    </fieldset>
+    <fieldset>
+      <legend>사진 글자</legend>
+      <label>제목 <input data-key="title" type="text" maxlength="60" autocomplete="off"></label>
+      <label>부제 <input data-key="subline" type="text" maxlength="60" autocomplete="off"></label>
+    </fieldset>
+    <fieldset>
+      <legend>배치</legend>
+      <div class="설정단추">
+        <button id="배치잠금설정" class="알약 부스만" type="button">배치 잠금</button>
+        <button id="배치초기화" class="알약" type="button">배치 처음대로</button>
+        <button id="전체화면" class="알약" type="button">전체 화면</button>
+      </div>
+    </fieldset>
+  </form>
+</aside>
+
+<!-- 인쇄할 때만 보인다 -->
+<div id="인쇄영역" class="인쇄영역" aria-hidden="true"><img alt=""></div>
+</body>
+</html>

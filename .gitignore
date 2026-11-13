@@ -1,0 +1,8 @@
+# 시험 결과·가짜 카메라 영상·도구 설치물은 올리지 않는다
+tools/out/
+node_modules/
+*.y4m
+*.tmp.mp4
+
+# 사진 앱의 MediaPipe 로컬 사본은 14MB wasm이 있어 올리지 않는다(없으면 앱이 CDN에서 받음)
+otr/라이브러리/

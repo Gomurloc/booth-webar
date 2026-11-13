@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070818">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="UNMUTE — 흑백 도시에 내가 되찾아 줄 빛은?">
+<title>UNMUTE 나의 빛 테스트</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- 글꼴은 그리기를 막지 않게 받는다(늦거나 막히면 시스템 글꼴로 먼저 그린다) -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="unmute.css">
+<script type="module" src="test.js"></script>
+</head>
+<body data-screen="loading">
+<!-- 배경: 메인 포스터의 로고 아래 부분. 질문이 진행될수록 회색에서 색이 돌아오고, 결과에서 다 돌아온다 -->
+<div class="bg" aria-hidden="true"><img src="art/bg.jpg" alt=""></div>
+<div class="glow" aria-hidden="true"></div>
+
+<header class="top">
+  <a class="back" href="../"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>다른 게임</a>
+  <!-- 팀 확인용 시안 표시: 주소에 ?draft=1이 있을 때만 -->
+  <span id="draft" class="draft" title="UNMUTE 팀 확인 전 시안" hidden>시안</span>
+</header>
+
+<main>
+  <section id="intro" class="screen intro" aria-labelledby="intro-title" hidden>
+    <img class="logo" src="art/logo.png" alt="UNMUTE THE VIVID WORLD" width="1080" height="320">
+    <p id="intro-kicker" class="kicker"></p>
+    <p id="intro-headline" class="headline"></p>
+    <h1 id="intro-title"></h1>
+    <p id="intro-lead" class="lead"></p>
+    <button id="start" class="btn primary" type="button"></button>
+  </section>
+
+  <section id="quiz" class="screen quiz" aria-live="polite" hidden>
+    <div class="progress">
+      <span id="q-count" class="q-count"></span>
+      <ol id="q-bar" class="q-bar" aria-hidden="true"></ol>
+    </div>
+    <h2 id="q-text" class="q-text"></h2>
+    <div id="answers" class="answers" role="group" aria-labelledby="q-text"></div>
+    <button id="prev" class="btn text" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>이전 질문
+    </button>
+  </section>
+
+  <section id="result" class="screen result" aria-labelledby="r-name" hidden>
+    <p id="r-label" class="r-label"></p>
+    <h1 id="r-name" class="r-name"></h1>
+    <p id="r-emotion" class="r-emotion"></p>
+    <p id="r-desc" class="r-desc"></p>
+    <figure class="r-card">
+      <img id="r-card" alt="" hidden>
+      <div id="r-card-wait" class="r-card-wait" role="status">결과 이미지를 만드는 중…</div>
+    </figure>
+    <button id="save" class="btn primary" type="button" disabled></button>
+    <p id="r-hint" class="r-hint"></p>
+    <div class="r-more">
+      <button id="retry" class="btn ghost" type="button"></button>
+      <a class="btn ghost" href="../">다른 게임</a>
+    </div>
+    <p id="toast" class="toast" role="status" hidden></p>
+  </section>
+
+  <section id="oops" class="screen oops" hidden>
+    <h1>테스트를 불러오지 못했어요</h1>
+    <p id="oops-text"></p>
+    <a class="btn ghost" href="../">다른 게임</a>
+  </section>
+</main>
+</body>
+</html>

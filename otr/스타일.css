@@ -1,0 +1,326 @@
+/* 색 토큰: 트레일러 무드보드에서 가져온다. 캐릭터가 금 레코드를 들고 있어 청록은 쓰지 않는다(금과 청록은 한 화면에 두지 않는다).
+   라이브·결과 화면은 검정 위 회백색. 빨간 점은 많아야 하나 */
+:root {
+  --black: #06070a;
+  --ash: #c9d1dc;
+  --red: #e3232b;
+  --ash-rgb: 201 209 220;
+  --black-rgb: 6 7 10;
+  --glass: rgb(var(--black-rgb) / 0.58);
+  --glass-strong: rgb(var(--black-rgb) / 0.86);
+  --line: rgb(var(--ash-rgb) / 0.26);
+  --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --sans: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  --pad: 16px;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --shutter: 76px;
+  /* 폰은 조작 띠를 사진 밖에 둔다: 세로는 아래 띠 높이, 가로는 오른쪽 띠 폭. 부스는 0(사진이 화면 전체) */
+  --band-h: 0px;
+  --band-w: 0px;
+  --toast-b: calc(200px + var(--safe-b));
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--black);
+  color: var(--ash);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+body { overflow: hidden; overscroll-behavior: none; word-break: keep-all; overflow-wrap: anywhere; }
+
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--ash); outline-offset: 3px; }
+
+/* ── 무대: 카메라 + 캔버스 ───────────────────────── */
+#무대 { position: fixed; inset: 0; height: 100dvh; overflow: hidden; background: var(--black); }
+/* 캔버스 크기 = 사진 영역(보이는 그대로 찍힌다) */
+#카메라, #화면 { position: absolute; left: 0; top: 0; width: calc(100% - var(--band-w)); height: calc(100% - var(--band-h)); }
+#카메라 { object-fit: cover; }
+#화면 { touch-action: none; display: block; }
+
+/* 위·아래 띠: 글자가 밝은 배경에서도 읽히게 옅은 그늘 */
+.윗줄, .아래 { position: absolute; left: 0; right: 0; pointer-events: none; transition: opacity 0.2s; }
+.윗줄 > *, .아래 > * { pointer-events: auto; }
+.윗줄 {
+  top: 0;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  padding: calc(var(--pad) + var(--safe-t)) calc(var(--pad) + var(--safe-r)) 36px calc(var(--pad) + var(--safe-l));
+  background: linear-gradient(to bottom, rgb(var(--black-rgb) / 0.42), transparent);
+}
+.윗줄-오른쪽 { display: flex; align-items: flex-start; gap: 12px; }
+
+.워드마크 {
+  font: 500 13px/1 var(--mono); letter-spacing: 0.18em;
+  padding: 17px 0; /* 48px 높이: 길게 눌러 설정 열기(부스) 손잡이 */
+  text-shadow: 0 1px 6px rgb(var(--black-rgb) / 0.6);
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+
+.둥근단추 {
+  width: 48px; height: 48px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--glass); border: 1px solid var(--line);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.둥근단추 svg { width: 22px; height: 22px; fill: none; stroke: var(--ash); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+
+.알약 {
+  min-height: 48px; padding: 0 18px; border-radius: 24px;
+  background: var(--glass); border: 1px solid var(--line);
+  font-size: 15px; font-weight: 500; white-space: nowrap;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.알약[aria-pressed="true"], .알약[aria-checked="true"] { background: rgb(var(--ash-rgb) / 0.92); color: var(--black); border-color: transparent; }
+.알약:active { transform: scale(0.97); }
+.알약.작게 { font-size: 13px; padding: 0 16px; }
+.알약.큰 { min-height: 54px; padding: 0 26px; font-size: 16px; }
+.알약.옅게 { background: transparent; }
+
+/* 아래: 칸 배치는 모드마다 */
+.아래 {
+  bottom: 0;
+  display: grid; align-items: center; gap: 12px 12px;
+  padding: 48px calc(var(--pad) + var(--safe-r)) calc(var(--pad) + var(--safe-b)) calc(var(--pad) + var(--safe-l));
+  background: linear-gradient(to top, rgb(var(--black-rgb) / 0.5), transparent);
+}
+#편집도구 { grid-area: tools; }
+#배역 { grid-area: cast; }
+#틀칩 { grid-area: frame; }
+#셔터 { grid-area: shutter; }
+#카메라전환 { grid-area: switch; }
+#직원안내 { grid-area: hint; }
+
+/* 폰 세로: 아래 검은 띠(사진 밖). 줄 높이를 고정해 도구가 나타나고 사라져도 사진 영역 크기가 그대로다 */
+body[data-mode="phone"] {
+  --band-h: calc(12px + 48px + 10px + 52px + 10px + var(--shutter) + 16px + var(--safe-b));
+  --toast-b: calc(var(--band-h) + 16px);
+}
+body[data-mode="phone"] .아래 {
+  top: auto; height: var(--band-h);
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: 48px 52px var(--shutter);
+  grid-template-areas: "tools tools tools" "cast cast cast" "frame shutter switch";
+  gap: 10px 12px; align-content: start;
+  padding: 12px calc(var(--pad) + var(--safe-r)) calc(16px + var(--safe-b)) calc(var(--pad) + var(--safe-l));
+  background: var(--black);
+}
+body[data-mode="phone"] .편집도구 { flex-wrap: nowrap; align-items: center; }
+/* 좁은 폰(폭 320px)에서도 도구 셋이 한 줄에 들어가게 */
+body[data-mode="phone"] .편집도구 .알약 { font-size: 14px; padding: 0 14px; }
+/* 폰 가로: 오른쪽 검은 띠 */
+@media (orientation: landscape) {
+  body[data-mode="phone"] {
+    --band-h: 0px;
+    --band-w: calc(252px + var(--safe-r));
+    --toast-b: calc(16px + var(--safe-b));
+  }
+  body[data-mode="phone"] .윗줄 { right: var(--band-w); }
+  body[data-mode="phone"] .아래 {
+    top: 0; left: auto; right: 0; bottom: 0; width: var(--band-w); height: auto;
+    grid-template-rows: 52px 104px var(--shutter);
+    grid-template-areas: "cast cast cast" "tools tools tools" "frame shutter switch";
+    align-content: center; gap: 10px 8px;
+    padding: calc(12px + var(--safe-t)) calc(12px + var(--safe-r)) calc(12px + var(--safe-b)) 12px;
+  }
+  body[data-mode="phone"] .편집도구 { flex-wrap: wrap; align-content: center; }
+  body[data-mode="phone"] .편집도구 .알약 { font-size: 13px; padding: 0 12px; }
+  body[data-mode="phone"] .도움말 { left: calc((100% - var(--band-w)) / 2); }
+}
+body[data-mode="phone"] #틀칩 { justify-self: start; }
+body[data-mode="phone"] #카메라전환 { justify-self: end; }
+body[data-mode="phone"] #배역 { justify-self: center; }
+body[data-mode="phone"] #직원안내,
+body[data-mode="phone"] #인쇄,
+body[data-mode="phone"] #잠금 { display: none; }
+
+body[data-mode="booth"] { --shutter: 96px; --pad: 28px; }
+body[data-mode="booth"] .워드마크 { font-size: 16px; }
+body[data-mode="booth"] .디버그 { top: 340px; right: 28px; }
+body[data-mode="booth"] .아래 {
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-areas: "cast shutter hint";
+}
+/* 부스 배치 도구는 위 가운데: 아래쪽은 캐릭터 발과 바닥 표시를 맞춰 보는 자리 */
+body[data-mode="booth"] .편집도구 {
+  position: fixed; left: 50%; top: calc(var(--pad) + var(--safe-t)); transform: translateX(-50%);
+  max-width: calc(100% - 640px);
+}
+body[data-mode="booth"] #배역 { justify-self: start; }
+body[data-mode="booth"] #직원안내 { justify-self: end; }
+body[data-mode="booth"] #틀칩,
+body[data-mode="booth"] #카메라전환 { display: none; }
+/* 부스: 설정 단추는 배치를 풀었거나 설정창이 열렸을 때만 */
+body[data-mode="booth"][data-edit="off"]:not([data-settings="open"]) #설정버튼 { display: none; }
+
+.편집도구 { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; min-height: 0; }
+/* 옆에 세우기·사람이 앞: 사람 인식이 될 때만. 좌우 반전·사람이 앞: 고른 캐릭터가 있을 때만 */
+body[data-seg="off"] #옆에세우기, body[data-seg="off"] #앞뒤 { display: none; }
+body[data-selected="none"] #좌우반전, body[data-selected="none"] #앞뒤 { display: none; }
+body[data-mode="booth"][data-edit="off"] .편집도구 { display: none; }
+
+.셔터 {
+  width: var(--shutter); height: var(--shutter); border-radius: 50%; padding: 0;
+  display: grid; place-items: center;
+  background: rgb(var(--black-rgb) / 0.25); border: 3px solid var(--ash);
+  box-shadow: 0 4px 24px rgb(var(--black-rgb) / 0.45);
+}
+.셔터 span {
+  width: calc(var(--shutter) - 16px); height: calc(var(--shutter) - 16px); border-radius: 50%;
+  background: var(--ash); transition: transform 0.12s;
+}
+.셔터:active span { transform: scale(0.9); }
+
+.배역 { display: flex; gap: 8px; }
+.배역 button {
+  height: 52px; min-width: 52px; padding: 3px; border-radius: 14px;
+  display: flex; gap: 0; align-items: center; justify-content: center;
+  background: var(--glass); border: 1px solid var(--line);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.배역 button img { width: 44px; height: 44px; border-radius: 11px; display: block; background: var(--black); object-fit: cover; }
+.배역 button img + img { margin-left: -12px; box-shadow: -2px 0 0 var(--black); }
+.배역 button[aria-checked="true"] { border-color: var(--ash); box-shadow: inset 0 0 0 1px var(--ash); }
+.배역 button[aria-checked="false"] img { opacity: 0.55; }
+
+.직원안내 { margin: 0; font: 400 12px/1.4 var(--sans); opacity: 0.6; text-align: right; }
+.직원안내 kbd {
+  font: 500 11px/1 var(--mono); padding: 3px 6px; margin-left: 10px;
+  border: 1px solid var(--line); border-radius: 4px;
+}
+
+.도움말 {
+  position: absolute; left: 50%; top: calc(80px + var(--safe-t)); transform: translateX(-50%);
+  margin: 0; padding: 10px 16px; border-radius: 20px; max-width: calc(100% - 32px);
+  background: var(--glass); border: 1px solid var(--line);
+  font-size: 13px; text-align: center; pointer-events: none;
+}
+
+.큐알 { margin: 0; display: grid; justify-items: center; gap: 8px; padding: 10px; border-radius: 12px; background: var(--glass); border: 1px solid var(--line); }
+/* 부스 QR: 15인치 노트북에서 약 5cm, 43인치 화면에서 약 11cm(둘레 4칸 여백 포함) */
+.큐알 canvas { width: 220px; height: 220px; image-rendering: pixelated; border-radius: 6px; }
+.큐알 figcaption { font: 500 12px/1 var(--sans); letter-spacing: 0.02em; }
+
+/* ── 상태 ─────────────────────────────────────────── */
+body:not([data-state="live"]) .아래,
+body:not([data-state="live"]) .윗줄 > .윗줄-오른쪽,
+body:not([data-state="live"]) .도움말 { opacity: 0; pointer-events: none; visibility: hidden; }
+body[data-state="countdown"] .워드마크 { opacity: 0.5; }
+
+.로딩 {
+  position: absolute; inset: 0; margin: 0; display: none; place-items: center;
+  font: 500 14px/1 var(--mono); letter-spacing: 0.14em; color: var(--ash);
+}
+body[data-state="loading"] .로딩 { display: grid; }
+
+.카운트 {
+  position: absolute; inset: 0; display: none; place-items: center; pointer-events: none;
+  font: 500 min(44vh, 48vw)/1 var(--mono); color: var(--ash);
+  text-shadow: 0 0 60px rgb(var(--black-rgb) / 0.55), 0 4px 16px rgb(var(--black-rgb) / 0.35);
+}
+body[data-state="countdown"] .카운트 { display: grid; }
+.카운트.톡 { animation: 톡 0.9s ease-out both; }
+@keyframes 톡 { from { transform: scale(1.12); opacity: 0.4; } 22% { opacity: 1; } to { transform: scale(1); opacity: 0.92; } }
+
+.플래시 { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+.플래시.터짐 { animation: 터짐 0.12s ease-out both; }
+@keyframes 터짐 { from { opacity: 0.92; } to { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .카운트.톡 { animation: none; }
+  .플래시.터짐 { animation-name: 터짐-약하게; }
+  @keyframes 터짐-약하게 { from { opacity: 0.4; } to { opacity: 0; } }
+  .셔터 span, .윗줄, .아래 { transition: none; }
+}
+
+.알림 {
+  position: fixed; z-index: 9; left: 50%; bottom: var(--toast-b); transform: translateX(-50%);
+  margin: 0; padding: 12px 18px; border-radius: 22px; max-width: calc(100% - 32px);
+  background: var(--glass-strong); border: 1px solid var(--line); font-size: 14px; text-align: center;
+}
+
+.디버그 {
+  position: absolute; right: 16px; top: calc(80px + var(--safe-t)); z-index: 1; margin: 0; max-width: min(460px, calc(100% - 32px));
+  padding: 10px 12px; border-radius: 8px; background: rgb(0 0 0 / 0.62);
+  font: 400 11px/1.45 var(--mono); white-space: pre-wrap; pointer-events: none;
+}
+
+/* ── 결과 ─────────────────────────────────────────── */
+.결과 {
+  position: fixed; inset: 0; z-index: 5; height: 100dvh;
+  display: grid; grid-template-rows: minmax(0, 1fr) auto;
+  padding: calc(var(--pad) + var(--safe-t)) calc(var(--pad) + var(--safe-r)) calc(var(--pad) + var(--safe-b)) calc(var(--pad) + var(--safe-l));
+  background: var(--black);
+}
+.결과-사진 { position: relative; min-height: 0; }
+.결과-사진 img {
+  position: absolute; inset: 0 0 16px 0; width: 100%; height: calc(100% - 16px);
+  object-fit: contain; display: block;
+  filter: drop-shadow(0 14px 36px rgb(0 0 0 / 0.6));
+  -webkit-touch-callout: default; /* iOS: 길게 눌러 사진 저장 */
+}
+.결과-아래 { display: grid; justify-items: center; gap: 14px; }
+.틀고르기 { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.결과-단추 { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.결과안내 { margin: 0; min-height: 1.4em; font: 400 13px/1.4 var(--sans); opacity: 0.6; text-align: center; }
+body[data-mode="booth"] .결과 { --pad: 28px; }
+.결과:focus, .결과:focus-visible { outline: none; }
+
+/* ── 오류 ─────────────────────────────────────────── */
+.오류 {
+  position: fixed; left: 50%; top: 50%; z-index: 6; transform: translate(-50%, -50%);
+  width: min(460px, calc(100% - 32px)); padding: 28px 26px;
+  background: var(--glass-strong); border: 1px solid var(--line); border-radius: 18px;
+  display: grid; gap: 14px; justify-items: start;
+}
+.오류 h2 { margin: 0; font: 600 19px/1.35 var(--sans); }
+.오류 h2::before { content: ''; display: inline-block; width: 9px; height: 9px; margin: 0 10px 2px 0; border-radius: 50%; border: 1.5px solid var(--ash); }
+.오류 p { margin: 0; font-size: 15px; line-height: 1.6; opacity: 0.86; }
+
+/* ── 설정 ─────────────────────────────────────────── */
+.설정창 {
+  position: fixed; z-index: 7; top: 0; right: 0; bottom: 0; width: min(420px, 100%);
+  overflow: auto; overscroll-behavior: contain;
+  padding: calc(18px + var(--safe-t)) calc(20px + var(--safe-r)) calc(24px + var(--safe-b)) 20px;
+  background: rgb(10 11 15 / 0.96); border-left: 1px solid var(--line);
+}
+body[data-mode="phone"] .설정창 {
+  top: auto; left: 0; width: 100%; max-height: 82dvh;
+  border-left: 0; border-top: 1px solid var(--line); border-radius: 18px 18px 0 0;
+}
+.설정창 > header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.설정창 h2 { margin: 0; font: 600 16px/1 var(--sans); }
+.설정창 fieldset { border: 0; border-top: 1px solid var(--line); margin: 0; padding: 14px 0 6px; display: grid; gap: 12px; }
+.설정창 legend { padding: 0 8px 0 0; font: 500 12px/1 var(--sans); opacity: 0.65; }
+.설정창 label { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; font-size: 14px; }
+.설정창 label.줄 { grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 44px; }
+.설정창 select, .설정창 input[type="text"], .설정창 input[type="number"] {
+  width: 100%; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 10px;
+  background: #0d0f14; border: 1px solid var(--line);
+}
+.설정창 input[type="range"] { accent-color: var(--ash); min-height: 32px; }
+.설정창 input[type="checkbox"] { accent-color: var(--ash); width: 22px; height: 22px; }
+.설정단추 { display: flex; gap: 8px; flex-wrap: wrap; }
+body[data-mode="phone"] .설정창 .부스만,
+body[data-mode="phone"] #전체화면 { display: none; }
+body[data-seg="off"] .설정창 .사람인식만 { display: none; }
+
+/* ── 인쇄: 사진만 ───────────────────────────────────
+   인쇄할 때는 늘 인쇄 영역만 보인다. 사진은 결과 화면에 있는 동안만 들어 있다(내보내기.js setPrintPhoto) */
+.인쇄영역 { display: none; }
+@media print {
+  html, body { background: #fff; height: auto; }
+  body > *:not(.인쇄영역) { display: none !important; }
+  .인쇄영역 { display: block; width: 100vw; height: 100vh; }
+  .인쇄영역 img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .인쇄영역 img:not([src]) { display: none; }
+}

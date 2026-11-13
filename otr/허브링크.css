@@ -1,0 +1,20 @@
+/* 허브(booth-webar)에서 덧붙인 파일: 윗줄 오른쪽의 "← 다른 게임" 링크.
+   원래 앱의 배치 규칙(스타일.css)은 건드리지 않고 이 링크 모양만 정한다 */
+.허브링크 {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--ash); text-decoration: none;
+}
+.허브링크:active { transform: scale(0.97); }
+.허브링크-격자 { display: none; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+/* 부스 모드(직원 노트북)에는 필요 없다 */
+body[data-mode="booth"] .허브링크 { display: none; }
+/* 좁은 폰(360px 등): 여백을 줄여 글자를 남긴다(화살표만 남으면 사진 화면의 뒤로 가기로 읽힌다) */
+@media (max-width: 379px) {
+  .허브링크 { padding: 0 11px; gap: 4px; }
+}
+/* 아주 좁은 폰(340px 미만): 워드마크와 겹치지 않게 게임 목록(격자) 그림만 */
+@media (max-width: 339px) {
+  .허브링크 { padding: 0; width: 48px; justify-content: center; }
+  .허브링크-글, .허브링크-화살표 { display: none; }
+  .허브링크-격자 { display: block; }
+}
