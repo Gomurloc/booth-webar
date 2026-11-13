@@ -1,5 +1,5 @@
 // 사용금지 영상을 웹용으로 바꾼다(아무 원본 → 폰에서 바로 도는 mp4 + 첫 장면 그림).
-// 결과: H.264 main(level 4.0) · yuv420p · 720x720 · 30fps 이하 · AAC 128k · +faststart(받는 중에도 재생 시작).
+// 결과: H.264 main(level 4.0) · yuv420p(BT.709 표시) · 720x720 · 30fps 이하 · AAC 128k · +faststart(받는 중에도 재생 시작).
 //       같은 이름의 .jpg(첫 장면)도 만든다. 허브가 영상을 받는 동안 이 그림을 먼저 보여 준다(video poster).
 // 비트레이트: 붐비는 행사장 회선(1.5~2Mbps)에서도 끊기지 않게 영상 1600kbps(+소리 128k ≈ 1.75Mbps)를 기본으로 한다.
 //       15초면 약 3.3MB. 입자감 있는 그림이라 이보다 낮추면 뭉개진다(2026-11-13 1500·2000kbps 비교).
@@ -59,13 +59,17 @@ function encode(a, src, videoKbps) {
   const W = a.w || a.size, H = a.h || a.size;
   const fps = src.fps > MAX_FPS + 0.5 ? MAX_FPS : 0;
   // 기본은 정사각형(포스터 장면 칸). --wh를 주면 그 크기로 맞춘다(포스터 전체를 덮는 판)
-  const vf = [`scale=${W}:${H}:force_original_aspect_ratio=increase:flags=lanczos`, `crop=${W}:${H}`, 'setsar=1', fps ? `fps=${fps}` : null]
+  // 색: 결과를 BT.709로 맞추고 표시를 붙인다. 원본에 BT.709 표시가 있으면 그대로 두고, 표시가 없으면 BT.601로 보고 바꾼다.
+  //     편집 대본이 처음부터 BT.709로 내보내면 크롬에서 첫 장면이 포스터와 가장 가깝다
+  //     (2026-11-14 크롬 비교, 포스터와 평균 밝기 차: 표시 없는 BT.601 약 +2, 처음부터 BT.709 약 0)
+  const vf = [`scale=${W}:${H}:force_original_aspect_ratio=increase:flags=lanczos:out_color_matrix=bt709:out_range=tv`, `crop=${W}:${H}`, 'setsar=1', fps ? `fps=${fps}` : null]
     .filter(Boolean)
     .join(',');
   const gop = Math.round((fps || src.fps || 24) * 2); // 2초마다 키프레임(되감기·다시 보기가 빠르게)
   const common = [
     '-vf', vf,
     '-c:v', 'libx264', '-profile:v', 'main', '-level:v', '4.0', '-pix_fmt', 'yuv420p', '-preset', 'slow',
+    '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv',
     // 최대 비트레이트를 평균의 1.3배로 묶어 받는 속도가 고르게(느린 회선에서 한 장면만 크게 튀지 않게)
     '-b:v', `${videoKbps}k`, '-maxrate', `${Math.round(videoKbps * 1.3)}k`, '-bufsize', `${Math.round(videoKbps * 1.5)}k`,
     '-g', String(gop), '-passlogfile', passlog,
