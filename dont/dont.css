@@ -23,7 +23,8 @@
 /* 영상 보기(화면 가운데). 포스터 위(ar)일 때는 투명하게 두되 그리기는 계속한다(iOS 텍스처용) */
 .dont-stage {
   position: absolute; left: 50%; top: 50%;
-  width: min(100vw, 100dvh - 220px - var(--safe-t, 0px) - var(--safe-b, 0px), 720px); aspect-ratio: 1;
+  /* 영상이 포스터 전체 비율(928:1325)이라 높이를 기준으로 폭을 정한다 */
+  width: min(100vw, (100dvh - 220px - var(--safe-t, 0px) - var(--safe-b, 0px)) * 0.7004, 720px); aspect-ratio: 928 / 1325;
   transform: translate(-50%, -50%);
   opacity: 0; transition: opacity 0.35s ease;
   pointer-events: none;
@@ -83,7 +84,7 @@
 
 /* 가로 화면(폰을 눕힘): 영상이 높이를 거의 다 쓰고, 끝 화면 단추는 오른쪽에 둔다 */
 @media (orientation: landscape) and (max-height: 560px) {
-  .dont-stage { width: min(100dvh - 16px - var(--safe-t, 0px) - var(--safe-b, 0px), 100vw - 2 * 232px, 720px); }
+  .dont-stage { width: min((100dvh - 16px - var(--safe-t, 0px) - var(--safe-b, 0px)) * 0.7004, 100vw - 2 * 232px, 720px); }
   .dont-end {
     left: auto; right: calc(16px + var(--safe-r, 0px)); top: 50%; bottom: auto; transform: translateY(-50%);
     width: 210px; margin: 0; padding: 0; gap: 8px;
@@ -95,7 +96,7 @@
 }
 /* 가로인데 아주 좁아 영상 옆에 자리가 없으면(작은 폰) 단추를 영상 위 아래쪽에 겹친다 */
 @media (orientation: landscape) and (max-height: 560px) and (max-width: 700px) {
-  .dont-stage { width: min(100dvh - 16px, 100vw - 32px, 720px); }
+  .dont-stage { width: min((100dvh - 16px) * 0.7004, 100vw - 32px, 720px); }
   .dont-end { left: 50%; right: auto; top: auto; bottom: calc(12px + var(--safe-b, 0px)); transform: translateX(-50%); width: min(420px, 100vw - 32px); grid-template-columns: 1fr 1fr; }
   .dont-end-head, .dont-msg { grid-column: 1 / -1; }
   .dont-end-head img { width: 60%; }

@@ -18,10 +18,11 @@ const AUDIO_KBPS = 128;
 const MAX_FPS = 30; // 720x720에서 level 4.0 한도 안(60fps 원본도 30으로 줄인다)
 
 function parseArgs(argv) {
-  const a = { size: 720, maxMb: 8, kbps: 1600, files: [] };
+  const a = { size: 720, w: 0, h: 0, maxMb: 8, kbps: 1600, files: [] };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--size') a.size = Number(argv[++i]);
+    else if (k === '--wh') [a.w, a.h] = argv[++i].split('x').map(Number); // 정사각형이 아닌 크기(예: 포스터 전체 720x1028)
     else if (k === '--max-mb') a.maxMb = Number(argv[++i]);
     else if (k === '--kbps' || k === '--cap-kbps') a.kbps = Number(argv[++i]);
     else a.files.push(k);
@@ -55,10 +56,10 @@ function encode(a, src, videoKbps) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'enc-'));
   const passlog = path.join(tmpDir, 'pass');
   const tmpOut = a.out + '.tmp.mp4';
-  const s = a.size;
+  const W = a.w || a.size, H = a.h || a.size;
   const fps = src.fps > MAX_FPS + 0.5 ? MAX_FPS : 0;
-  // 정사각형이 아니어도 가운데를 잘라 정사각형으로 맞춘다(포스터 칸이 정사각형)
-  const vf = [`scale=${s}:${s}:force_original_aspect_ratio=increase:flags=lanczos`, `crop=${s}:${s}`, 'setsar=1', fps ? `fps=${fps}` : null]
+  // 기본은 정사각형(포스터 장면 칸). --wh를 주면 그 크기로 맞춘다(포스터 전체를 덮는 판)
+  const vf = [`scale=${W}:${H}:force_original_aspect_ratio=increase:flags=lanczos`, `crop=${W}:${H}`, 'setsar=1', fps ? `fps=${fps}` : null]
     .filter(Boolean)
     .join(',');
   const gop = Math.round((fps || src.fps || 24) * 2); // 2초마다 키프레임(되감기·다시 보기가 빠르게)
