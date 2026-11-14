@@ -41,11 +41,14 @@ const AR = MODE === 'phone' && query.get('ar') === '1';
 const AR_HINT_MS = 6000; // 다 걸어 나온 뒤 "포스터 앞에 서서 함께 찍어요"를 보여 주는 시간
 const AR_IDLE_SEG_MS = 500; // 포스터를 찾는 동안 사람 인식 주기
 const AR_SCAN_HINT_MS = 5000; // 이만큼 못 찾으면 "포스터 전체가 보이게"로 바꾼다(앞사람이 가리고 있는 경우가 많다)
+// 이만큼 못 찾으면 "포스터 없이"로 안내한다. 허브의 직접 고르기도 포스터 AR로 열어서(2026-11-14) 포스터 없는 손님도 이 화면에 온다
+const AR_NO_POSTER_HINT_MS = 12000;
 const AR_FIT_HOLD_MS = 250; // 착지 자리가 이만큼 이어서 화면에 들어와야 걸어 나온다(한 프레임 맞고 나가는 것을 거른다)
 const AR_OUT_HINT_MS = 800; // 다 나온 캐릭터가 이만큼 넘게 화면 밖이면 "조금 뒤로 물러나 주세요"
 // 착지 자리가 화면에 들어왔는지(보기 정규 좌표). 발 지점 가로(cx: 몸 가운데)와 머리·발 높이로 본다.
 // 걸어 나오기 전(strict): 몸 가운데·발·머리가 대략 화면 안(몸 절반쯤은 보임). 허브에서 바로 열린 1~1.4m에서는 가운데가
-// -0.4·1.4 안팎, 발이 화면 아래로 한참 나가 걸린다. 기본 자리(±0.55m, 세로 폰, 화각 63도)면 포스터에서 약 2.2m부터 맞는다.
+// -0.4·1.4 안팎, 발이 화면 아래로 한참 나가 걸린다. 예전 기본 자리(±0.55m, 세로 폰, 화각 63도)는 포스터에서 약 2.2m부터 맞았다.
+// (2026-11-14) 둘이 떨어져 서서 한 명이 잘려 보여 ±0.42m로 좁혔다(캐릭터.json). 그만큼 조금 더 가까이서 맞는다
 // 다 나온 뒤 "조금 뒤로 물러나 주세요"(loose)는 더 느슨하게(몸 가운데가 화면 밖으로 확실히 나갔을 때만)
 const AR_FIT = { strict: { cx0: -0.05, cx1: 1.05, top: -0.03, feet: 1.03 }, loose: { cx0: -0.12, cx1: 1.12, top: -0.1, feet: 1.08 } };
 const CAM_LAG_QUERY = Number(query.get('camlag')); // 시험용: 카메라 지연(ms)을 이 값으로 본다
@@ -132,6 +135,8 @@ const app = {
   arHintShown: '',
   arScanSince: 0, // 포스터를 찾기 시작한 때
   arFit: null, // 이번 프레임 착지 자리가 화면에 들어오나 { strict, loose }
+  arSfx: { at: null, started: new Set(), touched: new Set() }, // 걸어 나오기 소리를 이번 걸어 나오기에 한 번씩만
+  arEverLive: false, // 이 페이지에서 포스터를 한 번이라도 잡았나(포스터 없이를 누를 때 셀카 카메라로 바꿀지)
   arJson: null, // 캐릭터.json의 ar(모든 손님 폰이 받는 세계 값)
   orientState: null, // iOS 자이로 허락: 'granted' | 'denied' | 'prompt' | 'unneeded'
   orientAsking: false,
@@ -437,6 +442,7 @@ function arItems() {
     const strictMiss = landMiss(raw, AR_FIT.strict);
     const looseMiss = landMiss(raw, AR_FIT.loose);
     app.arFit = { strict: !strictMiss, loose: !looseMiss, strictMiss, looseMiss, waiting: raw.some((i) => i.waiting), landed: raw.every((i) => i.landed) };
+    arStepSounds(raw);
   } else app.arFit = null;
   return raw
     .filter((it) => it.fx.alpha > 0.01)
@@ -444,6 +450,32 @@ function arItems() {
       const art = artOf(it.id);
       return { art, placement: { ...it.placement, flip: false, locked: true, front: 'person' }, fx: it.fx, anim: liveAnim(art), landed: it.landed };
     });
+}
+
+// 걸어 나오기 소리: 첫 캐릭터가 포스터를 떠날 때 무전 잡음, 캐릭터마다 떠날 때 휙, 바닥에 닿을 때 쿵.
+// 브라우저는 사용자가 탭한 뒤에만 소리를 켜 준다. 크롬 계열은 허브에서 누른 탭이 이 페이지까지 이어져
+// (navigator.userActivation.hasBeenActive) 첫 걸어 나오기부터 소리를 켤 수 있다. iOS는 이 페이지에서 탭하기 전이면 조용히 건너뛴다.
+// 새 걸어 나오기(다른 포스터·다시 불러오기)면 다시 울린다. 놓쳤다 다시 붙는 것은 같은 걸어 나오기라 다시 울리지 않는다
+function arStepSounds(raw) {
+  const at = app.ar.anchor?.at ?? null;
+  const sfx = app.arSfx;
+  if (!sound.ready() && navigator.userActivation?.hasBeenActive && raw.some((i) => i.started || i.touched)) sound.unlock();
+  if (at !== sfx.at) {
+    sfx.at = at;
+    sfx.started.clear();
+    sfx.touched.clear();
+  }
+  for (const it of raw) {
+    if (it.started && !sfx.started.has(it.id)) {
+      if (sfx.started.size === 0) sound.radio();
+      sound.whoosh();
+      sfx.started.add(it.id);
+    }
+    if (it.touched && !sfx.touched.has(it.id)) {
+      sound.thud();
+      sfx.touched.add(it.id);
+    }
+  }
 }
 
 // 모든 캐릭터의 착지 자리가 기준 rule만큼 화면 안인가. 반환: null(맞음) | 'far'(옆으로 나감, 또는 머리·발이 둘 다 나감 = 너무 가까움)
@@ -491,7 +523,7 @@ function arWorld() {
   const pick = (k) => a[k] ?? j[k] ?? AR_DEFAULTS[k];
   const chars = {};
   app.arts.forEach((art, i) => {
-    const d = art.arDefault ?? { height: 1.6, offset: i === 0 ? -0.55 : 0.55 };
+    const d = art.arDefault ?? { height: 1.6, offset: i === 0 ? -0.42 : 0.42 };
     const c = a.chars[art.id] ?? {};
     chars[art.id] = { height: c.height ?? d.height, offset: c.offset ?? d.offset };
   });
@@ -530,6 +562,7 @@ function onArStatus(s) {
   const was = app.arStatus;
   app.arStatus = s;
   el.body.dataset.arStatus = s;
+  if (s === 'live') app.arEverLive = true;
   if (s === 'live' && was !== 'live' && app.ar?.anchor && performance.now() - app.ar.anchor.at < 200) app.arLandedAt = 0;
   if (s === 'failed' && !app.arOff) arFallback('포스터 인식이 멈췄어요. 포스터 없이 찍어요.');
 }
@@ -554,7 +587,12 @@ function syncArHint(now) {
   if (app.arStatus === 'scanning') app.arScanSince ||= now;
   else app.arScanSince = 0;
   if (app.arStatus === 'loading') text = '포스터 인식 준비 중…';
-  else if (app.arStatus === 'scanning') text = now - app.arScanSince < AR_SCAN_HINT_MS ? '포스터를 화면에 비춰 주세요' : '포스터 전체가 보이게 비춰 주세요';
+  else if (app.arStatus === 'scanning') {
+    const waited = now - app.arScanSince;
+    if (waited < AR_SCAN_HINT_MS) text = '포스터를 화면에 비춰 주세요';
+    else if (waited < AR_NO_POSTER_HINT_MS || app.arEverLive) text = '포스터 전체가 보이게 비춰 주세요';
+    else text = '포스터가 없으면 아래 "포스터 없이"를 눌러 주세요';
+  }
   else if (f?.waiting) text = f.strict ? '' : FIT_HINT[stableMiss(f.strictMiss, now)][0];
   else if (f?.landed) {
     // 몸 가운데가 화면 밖으로 0.8초 넘게 나가 있으면(옆으로 돌리는 중에 잠깐 나간 것은 봐준다)
@@ -1147,6 +1185,11 @@ function restartAnimation(node, cls) {
 
 async function shoot({ countdown } = {}) {
   if (app.state !== 'live' || !app.drawn) return null;
+  // 포스터 AR에서 아직 포스터를 못 잡았으면(캐릭터가 없음) 빈 카메라 사진을 찍지 않고 안내만 한다
+  if (arActive() && !app.ar?.anchor) {
+    toast('포스터를 비추면 캐릭터가 나와요. 포스터가 없으면 "포스터 없이"를 눌러 주세요.');
+    return null;
+  }
   sound.unlock(); // 셔터 클릭·키는 사용자 활성화라 iOS도 여기서 소리를 켜 준다
   closeSettings();
   hideHint();
@@ -1646,7 +1689,16 @@ function wire() {
     app.ar.forget();
     app.arLandedAt = 0;
   });
-  document.getElementById('포스터없이').addEventListener('click', () => arFallback('포스터 없이 찍어요. 캐릭터를 끌어 옮길 수 있어요.'));
+  document.getElementById('포스터없이').addEventListener('click', () => {
+    // 이 페이지에서 포스터를 한 번도 못 잡았으면 포스터 없는 손님(직접 고르기로 들어옴)으로 보고, 원래 사진 앱처럼 셀카 카메라로 바꾼다.
+    // 포스터를 잡았던 경우(친구가 찍어 주던 중)와 직원이 고른 카메라가 있으면 그대로 둔다
+    const toSelfie = !app.arEverLive && !settings.cameraId && app.facing === 'environment';
+    arFallback(toSelfie ? '포스터 없이 찍어요. 앞 카메라로 바꿨어요.' : '포스터 없이 찍어요. 캐릭터를 끌어 옮길 수 있어요.');
+    if (toSelfie) {
+      app.facing = 'user';
+      startCamera();
+    }
+  });
   // iOS 자이로 허락(이 클릭이 사용자 동작이라 허락 창이 뜬다)
   el.motion?.addEventListener('click', () => askOrientation());
   document.getElementById('AR기본값')?.addEventListener('click', resetArOverrides);

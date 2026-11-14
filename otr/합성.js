@@ -19,7 +19,7 @@
 // - 반복 영상 캐릭터(c.anim): 미리보기는 4)를 WebGL(움직임.js)에서 같은 식으로 칠한다(영상 프레임마다 CPU 픽셀 처리를 돌리면 폰이 못 따라온다).
 //   촬영(still)은 부르는 쪽이 지금 프레임을 그림(art.img)으로 바꿔 넣어 예전 CPU 경로 그대로.
 // - 효과(c.fx): alpha(불투명도), reveal(위에서부터 드러난 비율), glow(뒤에 번지는 빛), flash(위에 얹는 번쩍임),
-//   shadow(그림자 세기 배율). 걸어 나오기에 쓴다
+//   shadow(그림자 세기 배율), dust(착지 먼지 진행 0..1). 걸어 나오기에 쓴다
 // - 기울기(c.placement.tilt, 라디안): 폰을 기울여 들면 세계의 세로도 화면에서 기운다. 발 지점을 축으로 그림자·캐릭터를 같이 돌린다
 import { sourceRectFor } from './화면.js';
 import { statsFromRGBA, harmonizeParams, buildLuts, applyHarmonize, statsChanged, lerpStats, shadowLight } from './색.js';
@@ -48,9 +48,16 @@ export const LOOK = {
 };
 
 const FULL = { x: 0, y: 0, w: 1, h: 1 };
-const NO_FX = { alpha: 1, reveal: 1, glow: 0, flash: 0, shadow: 1 };
-// 걸어 나오기 빛: 실루엣을 1/10로 줄였다 키워 번지게. 뒤 빛(halo)은 캐릭터 밑에, 번쩍임(flash)은 위에
-const GLOW = { tint: '#ffe9c4', halo: { scale: 1.12, alpha: 0.42 }, flash: { scale: 1.03, alpha: 0.6 }, shrink: 12, pad: 0.25 };
+const NO_FX = { alpha: 1, reveal: 1, glow: 0, flash: 0, shadow: 1, dust: 0 };
+// 걸어 나오기 빛: 실루엣을 1/10로 줄였다 키워 번지게. 뒤 빛(halo)은 캐릭터 밑에, 번쩍임(flash)은 위에.
+// (2026-11-14) 따뜻한 흰 빛이 칼선 스티커 테두리처럼 보여서 뒤 빛은 쓰지 않고(세계.js stepOut glow 0),
+// 번쩍임은 포스터의 차가운 남색에 맞춘 흰빛으로 짧고 약하게. 효과 색에 금색·청록은 쓰지 않는다
+const GLOW = { tint: '#dce6ff', halo: { scale: 1.12, alpha: 0.42 }, flash: { scale: 1.02, alpha: 0.4 }, shrink: 12, pad: 0.25 };
+// 위에서부터 드러날 때 경계 띠: 줄무늬(주사선)와 차가운 흰 경계선
+// stripe: 줄 두께(그림 높이 1000px당 px). 폰에서 보이게 2 CSS px 안팎(가늘면 회색으로 뭉개져 안 보였다). lineAt: 띠 위쪽(진한 쪽)에서부터 경계선 자리
+const REVEAL = { feather: 0.18, stripe: 16, stripeCut: 0.6, line: 'rgba(220,232,255,0.95)', lineAt: 0.1 };
+// 착지 먼지: 발밑에서 옆으로 퍼지며 사라지는 옅은 회색 둥근 띠(바닥 원근이라 납작하게)
+const DUST = { color: [222, 220, 214], alpha: 0.3, w0: 0.35, w1: 0.95, flat: 0.2 };
 
 export function makeCanvas(w = 1, h = 1) {
   const c = document.createElement('canvas');
@@ -376,7 +383,19 @@ export class Compositor {
       this.soleShadow(ctx, c, box, W, H, shadow);
       if (fx.glow > 0) this.drawGlow(ctx, c, box, W, H, fx.glow * fx.alpha, GLOW.halo);
       this.drawCharacter(ctx, st, c, box, f, fx);
-      if (fx.flash > 0) this.drawGlow(ctx, c, box, W, H, fx.flash, GLOW.flash);
+      if (fx.flash > 0) {
+        // 번쩍임은 이미 드러난 부분에만(아직 안 그려진 아래쪽까지 미리 비치면 흐린 유령이 먼저 보였다)
+        ctx.save();
+        if (fx.reveal < 1) {
+          ctx.beginPath();
+          ctx.rect(0, 0, W, box.y0 * H + box.h * H * Math.min(1, fx.reveal * (1 + REVEAL.feather) - REVEAL.feather * 0.5));
+          ctx.clip();
+        }
+        this.drawGlow(ctx, c, box, W, H, fx.flash, GLOW.flash);
+        ctx.restore();
+      }
+      // 먼지는 그림자처럼 바닥에 깔리므로 폰 기울기를 같이 따른다(사람 가림보다 먼저)
+      if (fx.dust > 0) this.drawDust(ctx, box, W, H, fx.dust);
       if (turned) ctx.restore();
       if (f.mask && f.look.occlusion && c.placement.front === 'person') this.occlude(ctx, f, box, shadowBox, tilt);
       report.push({ id: c.art.id, box, stats: st.stats, whole: this.whole, params: st.prep?.params ?? null, gpu: !!st.prep?.gpu });
@@ -618,7 +637,7 @@ export class Compositor {
     g.globalCompositeOperation = 'source-over';
     g.clearRect(0, 0, c.width, c.height);
     g.drawImage(st.out, 0, 0, w, h, 0, 0, w, h);
-    const feather = 0.18;
+    const feather = REVEAL.feather;
     const edge = Math.max(0, reveal) * (1 + feather) * h;
     const grad = g.createLinearGradient(0, edge - feather * h, 0, edge);
     grad.addColorStop(0, 'rgba(0,0,0,1)');
@@ -626,8 +645,45 @@ export class Compositor {
     g.globalCompositeOperation = 'destination-in';
     g.fillStyle = grad;
     g.fillRect(0, 0, w, h);
+    // 경계 띠 안을 몇 줄마다 비워 주사선으로 그려지는 것처럼(부드러운 그라디언트만이면 스티커가 벗겨지는 것처럼 보였다)
+    const b0 = Math.max(0, Math.floor(edge - feather * h));
+    const b1 = Math.min(h, Math.ceil(edge));
+    if (b1 > b0) {
+      const step = Math.max(2, Math.round((REVEAL.stripe * h) / 1000));
+      g.globalCompositeOperation = 'destination-out';
+      g.fillStyle = `rgba(0,0,0,${REVEAL.stripeCut})`;
+      for (let y = b0; y < b1; y += step * 2) g.fillRect(0, y, w, step);
+      // 그림이 있는 곳에만 차가운 흰 경계선
+      g.globalCompositeOperation = 'source-atop';
+      g.fillStyle = REVEAL.line;
+      const ly = edge - feather * h * REVEAL.lineAt;
+      g.fillRect(0, Math.round(ly), w, Math.max(2, Math.round(h / 100)));
+    }
     g.globalCompositeOperation = 'source-over';
     return c;
+  }
+
+  // 착지 먼지(d: 0..1 진행). 발 지점에서 옆으로 퍼지며 옅어진다. 사람 가림보다 먼저 그려 사람이 앞이면 가려진다
+  drawDust(ctx, box, W, H, d) {
+    const a = DUST.alpha * Math.min(1, d * 6) * Math.pow(1 - d, 1.5);
+    if (a <= 0.003) return;
+    const cx = box.fx * W;
+    const cy = box.fy * H;
+    const rx = Math.max(2, box.w * W * (DUST.w0 + (DUST.w1 - DUST.w0) * Math.sqrt(d)) * 0.5);
+    const ry = rx * DUST.flat;
+    const [r, gg, b] = DUST.color;
+    ctx.save();
+    ctx.translate(cx, cy - ry * 0.3);
+    ctx.scale(1, ry / rx);
+    const grad = ctx.createRadialGradient(0, 0, rx * 0.15, 0, 0, rx);
+    grad.addColorStop(0, `rgba(${r},${gg},${b},${a})`);
+    grad.addColorStop(0.6, `rgba(${r},${gg},${b},${a * 0.45})`);
+    grad.addColorStop(1, `rgba(${r},${gg},${b},0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, rx, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   // 걸어 나오기 빛: 실루엣을 작게 줄였다 키운 따뜻한 흰 빛을 더하기(lighter)로 얹는다. kind: GLOW.halo | GLOW.flash

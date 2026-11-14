@@ -25,6 +25,8 @@ const FAIL_TEXT = {
   timeout: '이 기기에서는 포스터 인식이 안 돼요. 아래에서 게임을 고르세요.',
   failed: '이 기기에서는 포스터 인식이 안 돼요. 아래에서 게임을 고르세요.',
 };
+// 포스터 인식기 자체가 안 되는 실패(카메라 문제가 아님). 이때는 직접 고르기도 사진 앱을 포스터 AR 없이 연다
+const AR_BROKEN = ['load', 'timeout', 'failed'];
 
 // 카카오톡·네이버·인스타그램 등 앱 안의 브라우저(웹뷰). 카메라·공유가 막혀 있는 경우가 많다
 const UA = navigator.userAgent;
@@ -162,7 +164,7 @@ function gameButton(id, cls) {
   if (cls === 'game-row') {
     // 첫 화면 목록은 링크(스크립트 없이 쓰던 것과 같은 모양). 누름은 허브가 가로챈다
     b = document.createElement('a');
-    b.href = g.href ?? 'video/dont.mp4';
+    b.href = g.arHref ?? g.href ?? 'video/dont.mp4';
   } else {
     b = document.createElement('button');
     b.type = 'button';
@@ -189,10 +191,13 @@ function gameButton(id, cls) {
     b.append(t);
     b.setAttribute('aria-label', `${g.name} 열기`);
   }
-  // 사용금지는 소리 있는 재생이 이 클릭 안에서 시작돼야 해서 click에서 바로 연다
+  // 사용금지는 소리 있는 재생이 이 클릭 안에서 시작돼야 해서 click에서 바로 연다.
+  // 사진 앱도 직접 고르기로 열 때 포스터 AR로 연다(포스터를 비추면 캐릭터가 걸어 나오고, 못 찾으면 "포스터 없이"로 넘어갈 수 있다).
+  // 다만 이 기기에서 포스터 인식이 이미 안 된다고 나왔으면(hub.fail) 사진 앱에서 같은 인식기를 다시 기다리지 않게 원래 사진 앱으로
   b.addEventListener('click', (e) => {
     e.preventDefault();
-    openGame(id);
+    if (g.arHref && !AR_BROKEN.includes(hub.fail)) openArGame(id);
+    else openGame(id);
   });
   const li = document.createElement('li');
   li.append(b);
@@ -368,8 +373,12 @@ el.cardOpen.addEventListener('click', () => {
   if (!hub.card) return;
   const g = GAMES[hub.card.game];
   if (!g?.arHref) return openGame(hub.card.game);
-  // 사진 앱 포스터 AR: 포스터를 놓쳤을 때 캐릭터를 세계에 붙여 두는 데 자이로를 쓴다.
-  // iOS는 탭 안에서만 허락을 물을 수 있어서 지금 묻고(같은 주소라 사진 앱에서도 쓴다), 답한 뒤에 간다
+  openArGame(hub.card.game, el.cardOpen);
+});
+
+// 사진 앱 포스터 AR로 연다(포스터 카드, 직접 고르기 둘 다). 포스터를 놓쳤을 때 캐릭터를 세계에 붙여 두는 데 자이로를 쓴다.
+// iOS는 탭 안에서만 허락을 물을 수 있어서 지금 묻고(같은 주소라 사진 앱에서도 쓴다), 답한 뒤에 간다
+function openArGame(id, btn = null) {
   const D = window.DeviceOrientationEvent;
   if (D && typeof D.requestPermission === 'function' && hub.state !== 'leaving') {
     let asked;
@@ -379,16 +388,16 @@ el.cardOpen.addEventListener('click', () => {
       asked = null;
     }
     if (asked?.then) {
-      el.cardOpen.disabled = true;
+      if (btn) btn.disabled = true;
       asked.catch(() => {}).finally(() => {
-        el.cardOpen.disabled = false;
-        openGame(hub.card?.game ?? g.id, { ar: true });
+        if (btn) btn.disabled = false;
+        openGame(id, { ar: true });
       });
       return;
     }
   }
-  openGame(hub.card.game, { ar: true });
-});
+  openGame(id, { ar: true });
+}
 el.cardDismiss.addEventListener('click', () => {
   const c = hub.card;
   if (c && hub.ar?.isVisible(c.index)) {
@@ -400,7 +409,7 @@ el.cardDismiss.addEventListener('click', () => {
 });
 
 // ── 게임 열기 ─────────────────────────────────
-// ar: 포스터를 알아본 카드에서 열었다(사진 앱은 포스터 AR로)
+// ar: 사진 앱을 포스터 AR로 연다(포스터 카드, 그리고 2026-11-14부터 직접 고르기도. openArGame)
 function openGame(id, { ar = false } = {}) {
   const g = GAMES[id];
   if (!g || hub.state === 'leaving') return;

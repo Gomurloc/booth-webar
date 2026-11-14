@@ -15,6 +15,7 @@
 //   (requestVideoFrameCallback의 captureTime, 없으면 50ms 전으로 봄)의 값을 보간해 쓴다. 그 둘레 ±40ms(지금보다 앞서지 않게)를
 //   평균해 센서 잡음을 거른다(가운데 맞춘 창이라 늦어지지 않는다).
 // - 걸어 나오기: 처음 잡았을 때(또는 다른 포스터·다시 불러오기) 한 번, 포스터 그림 속 자리에서 바닥 자리로 1.5초.
+//   둘째 캐릭터는 0.3초 늦게 떠나서 모두 내려앉기까지 약 1.8초(세계.js STEP_STAGGER_MS).
 //   착지 자리가 화면에 다 안 들어오면(포스터에 너무 가까움) 포스터 그림 자리에서 다 드러난 채 기다린다(앱이 release를 부른다).
 // - 중력·벽 방향: 자이로가 있으면 포스터가 수직 벽에 똑바로 걸렸다고 보고 자세의 기울기를 중력에 맞추고(세계.js upright),
 //   벽이 바라보는 방위는 처음 잘 맞은 프레임들의 평균으로 붙잡아 둔다(작은 포스터는 이 방향을 몇 도씩 틀리게 잡는다).
@@ -43,8 +44,10 @@ import {
   wallAzimuth,
   lerpPlacementAR,
   stepOut,
+  staggeredU,
   STEP_OUT_MS,
   STEP_WAIT_U,
+  STEP_LAND_U,
 } from './세계.js';
 
 const TRACK_LONG = 960; // 인식 입력 긴 변(px). 2.6m 거리의 B2 포스터가 약 150px(추적 기준 그림 128px 이상)
@@ -82,7 +85,8 @@ const CTRL_KEEP = 2; // 영상 크기별 인식기를 이만큼 붙잡아 둔다
 export const POSTERS = [
   {
     id: '3U_Main',
-    start: { record: { x: 0.3, top: 0.27, h: 0.72 }, aria: { x: 0.72, top: 0.45, h: 0.58 } },
+    // 아리아는 포스터에 가슴 위만 그려져 있어 발이 포스터 아래로 빠져 매달려 보였다(top 0.45 → 0.40, 발 0.98)
+    start: { record: { x: 0.3, top: 0.27, h: 0.72 }, aria: { x: 0.72, top: 0.4, h: 0.58 } },
   },
   { id: '3U_Second', start: null },
 ];
@@ -739,7 +743,7 @@ export class PosterAR {
     const d = this.dims[index];
     const pw = w.posterWidth ?? POSTER_WIDTH_M;
     const posterH = (pw * d[1]) / d[0];
-    const c = w.chars[id] ?? { height: 1.6, offset: i === 0 ? -0.55 : 0.55 };
+    const c = w.chars[id] ?? { height: 1.6, offset: i === 0 ? -0.42 : 0.42 };
     const st = POSTERS[index]?.start?.[id] ?? CENTER_START[i % 2];
     const startH = st.h * posterH;
     const top = (0.5 - st.top) * posterH;
@@ -772,7 +776,9 @@ export class PosterAR {
     return { G, Gold, k: Gold ? easeInOut((now - this.blendAt) / BLEND_MS) : 1 };
   }
 
-  // 이번 프레임에 그릴 캐릭터: [{ id, placement:{cx, feetY, heightFrac, tilt}, land(착지 자리 배치), fx:{alpha, glow, flash, shadow, reveal}, landed, waiting }]
+  // 이번 프레임에 그릴 캐릭터: [{ id, placement:{cx, feetY, heightFrac, tilt}, land(착지 자리 배치), fx:{alpha, glow, flash, shadow, reveal, dust},
+  //   started(포스터를 떠나기 시작함), touched(바닥에 닿음), landed, waiting }]
+  // 둘째 캐릭터는 포스터를 조금 늦게 떠난다(staggeredU)
   // ids: 보일 캐릭터 id(캐릭터.json 순서 중 지금 고른 것), order: 캐릭터.json 전체 순서. fx.alpha가 0이면 그리지 않는다(앱이 거른다)
   items(now, view, ids, order) {
     if (!this.pose || !this.anchor || !this.dims) return [];
@@ -795,9 +801,13 @@ export class PosterAR {
     for (const id of ids) {
       const i = order.indexOf(id);
       const { from, to } = this.spots(id, i, idx);
-      const s = stepOut(u, from, to, reduced);
+      // 시간차는 지금 보이는 캐릭터 중 순서로(하나만 고르면 바로 떠난다)
+      const ui = reduced ? u : staggeredU(u, ids.indexOf(id));
+      const s = stepOut(ui, from, to, reduced);
       const p = place(s.feet, s.height);
       if (!p) continue;
+      // 가는 쪽으로 몸 기울임(발 지점을 축으로 돈다). 기울기는 포스터 기준 좌우라 거울 화면(앞 카메라·웹캠)이면 뒤집는다
+      if (s.lean) p.tilt += view.mirror ? -s.lean : s.lean;
       const land = place(to.feet, to.height);
       // 카메라가 캐릭터 바로 앞이면(화면 높이의 1.5~2배) 흐리게 지운다: 판이 화면을 덮고 그림 판이 지나치게 커진다
       const near = 1 - smoothstep(NEAR_FADE[0], NEAR_FADE[1], p.heightFrac);
@@ -805,8 +815,11 @@ export class PosterAR {
         id,
         placement: p,
         land,
-        fx: { alpha: s.alpha * near, glow: s.glow, flash: s.flash, shadow: s.shadow * near, reveal: s.reveal },
-        landed: !a.wait && u >= 1,
+        fx: { alpha: s.alpha * near, glow: s.glow, flash: s.flash, shadow: s.shadow * near, reveal: s.reveal, dust: (s.dust ?? 0) * near },
+        // 소리 신호(움직임 줄이기면 서서히 나타나기만 해서 소리도 없다)
+        started: !reduced && !a.wait && ui > STEP_WAIT_U,
+        touched: !reduced && ui >= STEP_LAND_U,
+        landed: !a.wait && ui >= 1,
         waiting: !!a.wait,
       });
     }

@@ -23,7 +23,10 @@
 // - ios      iOS 허락 흉내: 사용자 동작 없이는 거절 → '움직임 허용' 단추 → 누르면 허락·자이로 들어옴. 허브에서 받은 허락이면 단추 없음
 // - scanhint 다른 포스터만 보이는 영상: 5초 넘게 못 찾으면 "포스터 전체가 보이게"
 // - plain    원래 사진 앱(otr/): 반복 영상 캐릭터가 GPU 경로로 움직이는지 → 사진
-// - hub      허브: 시작 → 포스터 카드 → 사진 찍으러 가기가 otr/?ar=1로 가는지, 직접 고르기는 otr/
+// - hub      허브: 시작 → 포스터 카드 → 사진 찍으러 가기가 otr/?ar=1로 가는지, 직접 고르기도 otr/?ar=1(2026-11-14부터)
+// - look     3U_Main을 배포 기본값(캐릭터.json 자리) 그대로: 걸어 나오기 모습·사진만 찍는다(정답 오차는 재지 않는다)
+// 오차를 재는 장면은 정답 영상을 그릴 때 쓴 캐릭터 자리(정답 json의 world.chars)를 이 폰 설정으로 넣고 돈다.
+// 배포 기본 자리가 바뀌어도(캐릭터.json) 추적 오차를 같은 기준으로 잰다
 // 쓰는 법: node tools/check_ar.mjs --pw <…/node_modules/playwright> [--cams <y4m 폴더;폴더2>] [--out <결과 폴더>] [--only main,occl]
 import fs from 'node:fs/promises';
 import fss from 'node:fs';
@@ -200,8 +203,13 @@ function iosStub(mode) {
   };
 }
 
-async function newPage(browser, rec, cam, { gyro = true, lead = 0, noise = 0, drift = 0, pauses = [], thresh = 0, world = null, reduced = false, ios = null } = {}) {
+async function newPage(browser, rec, cam, { gyro = true, lead = 0, noise = 0, drift = 0, pauses = [], thresh = 0, world = null, reduced = false, ios = null, appSpots = false } = {}) {
   const truth = cam ? JSON.parse(await fs.readFile(camFile(cam, '.json'), 'utf8')) : null;
+  // 정답 영상의 캐릭터 자리로 맞춘다(appSpots면 배포 기본값 그대로)
+  if (truth?.world?.chars && !appSpots && !world?.chars) {
+    const chars = Object.fromEntries(Object.entries(truth.world.chars).map(([id, off]) => [id, { offset: off, height: truth.world.height ?? 1.6 }]));
+    world = { ...(world ?? {}), chars };
+  }
   const context = await browser.newContext({ ...PHONE, acceptDownloads: true, reducedMotion: reduced ? 'reduce' : 'no-preference' });
   if (ios) await context.addInitScript(iosStub, ios);
   if (world) {
@@ -238,7 +246,7 @@ async function shot(page, rec, name, { fast = false } = {}) {
     const a = b?.ar;
     return {
       frame: window.__arframe,
-      ar: a ? { status: a.status, anchorAge: a.anchorAge && Math.round(a.anchorAge), waiting: a.waiting, gyro: a.gyro, depthM: a.depthM && +a.depthM.toFixed(2), fit: a.fit, items: (a.items || []).map((i) => ({ id: i.id, cx: +i.placement.cx.toFixed(3), feetY: +i.placement.feetY.toFixed(3), h: +i.placement.heightFrac.toFixed(3), alpha: +(+i.fx.alpha).toFixed(2) })) } : null,
+      ar: a ? { status: a.status, anchorAge: a.anchorAge && Math.round(a.anchorAge), waiting: a.waiting, gyro: a.gyro, depthM: a.depthM && +a.depthM.toFixed(2), fit: a.fit, items: (a.items || []).map((i) => ({ id: i.id, cx: +i.placement.cx.toFixed(3), feetY: +i.placement.feetY.toFixed(3), h: +i.placement.heightFrac.toFixed(3), alpha: +(+(i.fx?.alpha ?? 1)).toFixed(2) })) } : null, // 포스터 없이로 넘어간 뒤 캐릭터에는 fx가 없다
       hint: b?.hint ?? null,
       fps: Math.round(window.__fps),
     };
@@ -392,6 +400,58 @@ function hints(log) {
 const range = (truth, a, b) => (e) => e.k >= frameAt(truth, a) && e.k < frameAt(truth, b);
 
 const scenarios = {
+  // 배포 기본값(캐릭터.json 자리) 그대로 걸어 나오기 모습: 포스터 안 드러나기(주사선) → 첫째가 먼저 떠남 → 둘 다 날아옴(기울임)
+  // → 첫째 착지(먼저) → 다 내려앉음 → 사진. 정답 오차는 재지 않는다(정답 영상은 예전 자리로 그렸다)
+  async look(browser, rec) {
+    const { page, context, truth } = await newPage(browser, rec, 'ar_main', { appSpots: true });
+    await openAr(page, rec);
+    // 포스터 안에서 드러나는 0.3초는 기다려서는 못 찍는다(착지 자리 확인 0.25초 뒤에야 풀림). 진행을 붙잡아 두고 찍는다
+    for (const u of [0.06, 0.1, 0.14]) {
+      await page.evaluate((pu) => {
+        window.__pinU = pu;
+        if (!window.__pinLoop) {
+          const loop = () => {
+            const a = window.__booth.arObject()?.anchor;
+            if (a && window.__pinU != null) {
+              a.at = performance.now() - window.__pinU * 1500;
+              a.wait = false;
+            }
+            window.__pinLoop = requestAnimationFrame(loop);
+          };
+          loop();
+        }
+      }, u);
+      await sleep(300);
+      await shot(page, rec, `look-0-reveal-${u}`, { fast: true });
+    }
+    await page.evaluate(() => {
+      window.__pinU = null;
+      cancelAnimationFrame(window.__pinLoop);
+      window.__pinLoop = null;
+      const a = window.__booth.arObject()?.anchor;
+      if (a) {
+        a.at = performance.now(); // 처음부터 다시 걸어 나온다
+        a.wait = false;
+      }
+    });
+    await waitAnchorAge(page, 180);
+    await shot(page, rec, 'look-1-reveal', { fast: true });
+    await waitAnchorAge(page, 560);
+    await shot(page, rec, 'look-2-first-leaves', { fast: true });
+    await waitAnchorAge(page, 900);
+    await shot(page, rec, 'look-3-midair', { fast: true });
+    await waitAnchorAge(page, 1420);
+    await shot(page, rec, 'look-4-first-lands', { fast: true });
+    await waitAnchorAge(page, 1720);
+    await shot(page, rec, 'look-5-second-lands', { fast: true });
+    await waitAnchorAge(page, 2600);
+    await shot(page, rec, 'look-6-landed');
+    rec.items = await page.evaluate(() => window.__booth.ar.items?.map((i) => ({ id: i.id, cx: +i.placement.cx.toFixed(3), feetY: +i.placement.feetY.toFixed(3), h: +i.placement.heightFrac.toFixed(3) })));
+    await waitFrame(page, truth, 9.0);
+    await photo(page, rec, 'look-photo');
+    await context.close();
+  },
+
   async main(browser, rec) {
     const { page, context, truth } = await newPage(browser, rec, 'ar_main');
     await openAr(page, rec);
@@ -703,8 +763,20 @@ const scenarios = {
     await sleep(5000);
     rec.later = await page.evaluate(() => window.__booth.hint);
     await shot(page, rec, 'ar-scanhint');
+    // 포스터를 못 잡은 채 셔터: 빈 사진 대신 안내(2026-11-14)
+    rec.shootWhileScanning = await page.evaluate(async () => (await window.__booth.shoot({ countdown: 0 })) === null && window.__booth.state === 'live');
+    // 12초 넘게 못 찾으면 "포스터 없이"로 안내 → 누르면 원래 사진 앱 + 셀카 카메라
+    await sleep(6000);
+    rec.noPosterHint = await page.evaluate(() => window.__booth.hint);
+    await page.locator('#포스터없이').click();
+    await sleep(800);
+    rec.afterNoPoster = await page.evaluate(() => ({ ar: document.body.dataset.ar, mirror: window.__booth.view?.mirror ?? null }));
+    await shot(page, rec, 'ar-scanhint-noposter');
     await context.close();
     if (rec.later !== '포스터 전체가 보이게 비춰 주세요') throw new Error('안내가 바뀌지 않음: ' + rec.later);
+    if (!rec.shootWhileScanning) throw new Error('포스터를 잡기 전에 셔터로 사진이 찍힘');
+    if (!/포스터 없이/.test(rec.noPosterHint ?? '')) throw new Error('포스터 없이 안내가 안 나옴: ' + rec.noPosterHint);
+    if (rec.afterNoPoster.ar !== 'off') throw new Error('포스터 없이를 눌러도 원래 사진 앱이 아님');
   },
 
   // 원래 사진 앱(otr/, 포스터 AR 없음)에서도 캐릭터가 반복 영상으로 움직이는지, 사진에 그때 프레임이 들어가는지
@@ -739,10 +811,10 @@ const scenarios = {
     await page.waitForFunction(() => window.__booth.ar.status !== 'loading', null, { timeout: 60_000 });
     rec.arStatus = await page.evaluate(() => window.__booth.ar.status);
     await shot(page, rec, 'ar-hub-2-photo-app');
-    // 직접 고르기는 원래 사진 앱
+    // 직접 고르기도 포스터 AR(포스터를 찾고, 못 찾으면 사진 앱 안의 "포스터 없이")
     await page.goto(BASE + '/');
     await page.locator('.game-row[data-game="otr"]').click();
-    await page.waitForURL(/\/otr\/$/, { timeout: 10_000 });
+    await page.waitForURL(/\/otr\/\?ar=1$/, { timeout: 10_000 });
     await page.waitForFunction(() => window.__booth?.ready === true, null, { timeout: 60_000 });
     rec.manual = { url: page.url().replace(BASE, ''), ar: await page.evaluate(() => document.body.dataset.ar) };
     await context.close();
@@ -750,6 +822,7 @@ const scenarios = {
 };
 
 const CAM_FOR = {
+  look: 'ar_main',
   main: 'ar_main',
   occl: 'ar_occl',
   nogyro: 'ar_occl',

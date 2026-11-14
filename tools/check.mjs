@@ -461,7 +461,7 @@ const scenarios = {
     await sleep(200);
     rec.depthAfterClose = await hub(page, () => window.__hub.depth);
     await page.locator('.game-row[data-game="otr"]').click();
-    await page.waitForURL(/\/otr\/$/);
+    await page.waitForURL(/\/otr\/\?ar=1$/); // 직접 고르기도 포스터 AR로 연다(2026-11-14부터)
     await page.waitForFunction(() => window.__booth?.ready === true, null, { timeout: 60_000 });
     rec.otrOk = true;
     await page.goto(BASE + '/');

@@ -8,7 +8,7 @@
       "top": 0.0117,
       "feet": { "x": 0.4741, "y": 0.989 },
       "face": { "x": 0.4704, "y": 0.0802, "size": 0.3849 },
-      "ar": { "height": 1.6, "offset": -0.55 },
+      "ar": { "height": 1.6, "offset": -0.42 },
       "anim": { "file": "레코드.mp4", "fps": 24, "loop": true }
     },
     {
@@ -18,7 +18,7 @@
       "top": 0.0099,
       "feet": { "x": 0.4803, "y": 0.9901 },
       "face": { "x": 0.5945, "y": 0.1077, "size": 0.5572 },
-      "ar": { "height": 1.6, "offset": 0.55 },
+      "ar": { "height": 1.6, "offset": 0.42 },
       "anim": { "file": "아리아.mp4", "fps": 24, "loop": true }
     }
   ]

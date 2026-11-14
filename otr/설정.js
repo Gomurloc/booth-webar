@@ -11,7 +11,8 @@ export function defaultSettings(mode) {
   return {
     mirror: 'auto', // auto: 앞(셀카)·웹캠은 거울, 뒤 카메라는 그대로
     countdown: 3,
-    harmonize: 0.6,
+    // 폰(손님)은 약하게: 세게 맞추면 애니 그림이 바로 옆 인쇄 포스터보다 바래 보였다(2026-11-14). 부스는 직원이 맞춘 값 그대로
+    harmonize: booth ? 0.6 : 0.35,
     shadow: 1,
     grain: 1,
     occlusion: true,

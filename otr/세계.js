@@ -318,32 +318,64 @@ export const STEP_OUT_MS = 1500;
 // 포스터 그림 자리에서 다 드러난 순간(번쩍임이 끝나고 아직 앞으로 나오기 전). 착지 자리가 화면에 다 안 들어오면
 // (폰이 포스터에 너무 가까움) 여기서 멈춰 기다렸다가 뒤로 물러나면 이어 간다
 export const STEP_WAIT_U = 0.2;
+// 둘째 캐릭터부터 이만큼씩 늦게 포스터를 떠난다(포스터 안에서 드러나기는 같이). 한 장처럼 같이 미끄러지면 스티커처럼 보였다
+export const STEP_STAGGER_MS = 300;
+// 바닥에 마지막으로 닿는 순간(u). 이때 착지 소리·먼지·눌림
+export const STEP_LAND_U = 0.8;
+const DUST_U = 0.4; // 착지 먼지 길이(u 단위, 0.6초)
+// 날아오는 길(포스터를 떠난 뒤 진행 p 기준): 앞부분(0~JUMP_P)은 포스터에서 뛰어내리며 바닥까지, 뒷부분은 바닥에서 작게 한 번 더 뛴다
+const FLY_T0 = 0.18; // 포스터를 떠나기 시작(u)
+const JUMP_P = 0.62; // 첫 착지(뛰어내림이 바닥에 닿음)
+const JUMP_UP = 0.15; // 뛰어내릴 때 처음 떠오르는 높이(m)
+const HOP_UP = 0.07; // 바닥에서 한 번 더 뛰는 높이(m)
 
-// 걸어 나오기 한 순간(u = 0..1). from: 포스터 그림 속 자리 { feet:[x,y,z], height }(m), to: 바닥 자리.
-// 반환: 그 순간의 발 지점·키(m), 불투명도, 뒤 빛(glow, 0..1), 앞 번쩍임(flash), 그림자 세기 배율, 위에서부터 드러난 비율(reveal)
-// - 0~0.2   포스터 그림 자리에서 번쩍이며 위에서부터 드러난다(포스터에 납작하게 붙은 채). 0.2에서 멈춰 기다릴 수 있다
-// - 0.18~0.86 포스터에서 떨어져 나와(앞으로 먼저) 살짝 떠올랐다가 바닥 자리로 내려오며 사람 크기로 커진다
-// - 0.8~1   내려앉는다: 발밑 그림자가 짙어지고 빛이 사라지며 아주 조금 눌렸다 편다
+// 캐릭터 i(지금 보이는 캐릭터 중 순서)의 걸어 나오기 진행. u: 첫 캐릭터 기준 진행. 기다리는 자리(STEP_WAIT_U)까지는 모두 같이 가고,
+// 그 뒤부터 i번째는 STEP_STAGGER_MS × i만큼 늦는다(기다리다 이어 갈 때도 되감기지 않는다)
+export function staggeredU(u, i) {
+  if (u <= STEP_WAIT_U || i <= 0) return u;
+  return Math.max(STEP_WAIT_U, u - (i * STEP_STAGGER_MS) / STEP_OUT_MS);
+}
+
+// 걸어 나오기 한 순간(u = 0..1, 먼지 때문에 1을 넘어서도 들어온다). from: 포스터 그림 속 자리 { feet:[x,y,z], height }(m), to: 바닥 자리.
+// 반환: 그 순간의 발 지점·키(m), 불투명도, 뒤 빛(glow, 늘 0), 앞 번쩍임(flash), 그림자 세기 배율, 위에서부터 드러난 비율(reveal),
+//       가는 쪽으로 몸 기울임(lean, 라디안. 포스터 기준 좌우라 거울 화면이면 부르는 쪽이 부호를 뒤집는다), 착지 먼지 진행(dust, 0..1, 0이면 없음)
+// - 0~0.2    포스터 그림 자리에서 위에서부터 줄무늬로 그려지듯 드러난다(포스터에 납작하게 붙은 채). 0.2에서 멈춰 기다릴 수 있다
+// - 0.18~0.8 포스터에서 떨어져 나와(앞으로 먼저) 살짝 떠올랐다가 바닥까지 뛰어내리고(0.56쯤 첫 착지), 바닥에서 작게 한 번 더 뛰어
+//            제자리에 내려앉는다. 그동안 사람 크기로 커지고 가는 쪽으로 몸을 기울였다가 바로 선다
+// - 0.8~1    내려앉는다: 발밑 그림자가 짙어지고, 아주 조금 눌렸다 펴지고, 발밑에 먼지가 인다
+// (2026-11-14) 따뜻한 흰 뒤 빛(glow)은 칼선 스티커 테두리처럼 보여서 뺐다. 번쩍임은 차갑고 짧게(합성.js GLOW.flash).
+// 한 번 떠서 미끄러지듯 내려오면 판이 날아가는 것처럼 보여서, 발이 실제로 두 번 떴다 내려오게 했다(위로 가는 구간이 있어야 뛰는 것으로 보인다)
 // reduced(움직임 줄이기)면 바닥 자리에서 그대로 서서히 나타난다
 export function stepOut(u, from, to, reduced = false) {
   const t = clamp01(u);
   if (reduced) {
     const a = smooth(0, 0.6, t);
-    return { feet: to.feet.slice(), height: to.height, alpha: a, glow: 0, flash: 0, shadow: a, reveal: 1 };
+    return { feet: to.feet.slice(), height: to.height, alpha: a, glow: 0, flash: 0, shadow: a, reveal: 1, lean: 0, dust: 0 };
   }
   const reveal = smooth(0.0, 0.2, t);
-  const s = easeInOut(clamp01((t - 0.18) / 0.68));
+  const p = clamp01((t - FLY_T0) / (STEP_LAND_U - FLY_T0)); // 날아오는 진행(마지막 착지에서 1)
+  const q = easeInOut(p); // 좌우·크기 진행
   const zOut = easeOut(clamp01((t - 0.12) / 0.5)); // 앞으로는 먼저 나온다(벽에서 떨어짐)
-  const hop = 0.1 * Math.sin(Math.PI * s); // 살짝 떠올랐다 내려온다(m)
-  const feet = [
-    from.feet[0] + (to.feet[0] - from.feet[0]) * s,
-    from.feet[1] + (to.feet[1] - from.feet[1]) * s + hop,
-    from.feet[2] + (to.feet[2] - from.feet[2]) * zOut,
-  ];
-  const land = clamp01((t - 0.84) / 0.16);
+  let y;
+  if (p < JUMP_P) {
+    // 뛰어내림: 떨어지는 쪽은 점점 빨라지고(d²), 처음엔 살짝 떠오른다(sin)
+    const d = p / JUMP_P;
+    y = from.feet[1] + (to.feet[1] - from.feet[1]) * d * d + JUMP_UP * Math.sin(Math.PI * d);
+  } else {
+    // 바닥에서 한 번 더
+    const e = (p - JUMP_P) / (1 - JUMP_P);
+    y = to.feet[1] + HOP_UP * Math.sin(Math.PI * e);
+  }
+  const feet = [from.feet[0] + (to.feet[0] - from.feet[0]) * q, y, from.feet[2] + (to.feet[2] - from.feet[2]) * zOut];
+  // 내려앉으며 아주 조금 눌렸다 편다(판 전체가 같이 줄어서 크게 하면 튀는 것처럼 보였다)
+  const land = clamp01((t - STEP_LAND_U) / 0.14);
   const squash = 1 - 0.035 * Math.sin(Math.PI * land);
-  const height = (from.height + (to.height - from.height) * s) * squash;
-  const glow = clamp01(smooth(0, 0.1, t) * (1 - smooth(0.35, 0.8, t))); // 뒤에서 번지는 빛(날아오는 동안 사그라든다)
-  const flash = clamp01(smooth(0, 0.05, t) * (1 - smooth(0.08, STEP_WAIT_U, t))); // 처음 잠깐 캐릭터 위로 번쩍(포스터 안에서 기다리는 자리 전에 끝난다)
-  return { feet, height, alpha: smooth(0, 0.16, t), glow, flash, shadow: smooth(0.72, 1, t), reveal };
+  const height = (from.height + (to.height - from.height) * q) * squash;
+  const flash = clamp01(smooth(0, 0.05, t) * (1 - smooth(0.08, STEP_WAIT_U, t))); // 처음 잠깐 번쩍(드러난 부분에만 그린다. 합성.js)
+  // 가는 쪽(포스터 기준 좌우)으로 몸을 기울였다가 내려앉으며 바로 선다. 최대 약 5도
+  const dir = Math.sign(to.feet[0] - from.feet[0]);
+  const lean = 0.09 * dir * Math.sin(Math.PI * q);
+  // 먼지는 내려앉은 뒤에도 조금 더(u는 1을 넘어서도 들어온다) 0.6초쯤 퍼지며 사라진다
+  const dust = u >= STEP_LAND_U && u < STEP_LAND_U + DUST_U ? (u - STEP_LAND_U) / DUST_U : 0;
+  return { feet, height, alpha: smooth(0, 0.16, t), glow: 0, flash, shadow: smooth(0.5, 0.8, t), reveal, lean, dust };
 }
