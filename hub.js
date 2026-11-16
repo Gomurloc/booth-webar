@@ -180,7 +180,8 @@ function gameButton(id, cls) {
   if (cls === 'game-row') {
     // 첫 화면 목록은 링크(스크립트 없이 쓰던 것과 같은 모양). 누름은 허브가 가로챈다
     b = document.createElement('a');
-    b.href = g.arHref ?? g.href ?? 'video/dont.mp4';
+    // 사용금지 링크는 영상 주소 그대로(?v= 판 번호까지. tools/stamp_media.mjs가 index.html에 붙인다)
+    b.href = g.arHref ?? g.href ?? document.getElementById('dont-video')?.getAttribute('src') ?? 'video/dont.mp4';
   } else {
     b = document.createElement('button');
     b.type = 'button';

@@ -54,7 +54,8 @@
 
 ## 사용금지 영상 바꾸기
 
-- **바꾸는 법** — `node tools/encode_video.mjs <새 원본.mp4>` 한 줄. 결과가 `video/dont.mp4`를 덮어쓴다(사이트는 이 이름만 읽는다). ffmpeg·ffprobe가 PATH에 있어야 한다.
+- **바꾸는 법** — `node tools/encode_video.mjs <새 원본.mp4>` 한 줄. 결과가 `video/dont.mp4`를 덮어쓰고, `index.html`의 영상 주소 끝 판 번호(`?v=` + 영상 내용 해시 8자리)도 바꾼다(`tools/stamp_media.mjs`). ffmpeg·ffprobe가 PATH에 있어야 한다.
+- **판 번호가 필요한 까닭** — 2026-11-16 서버에는 v4가 올라가 있었는데 QR로 들어간 폰에서 예전 영상이 나왔다. 폰 브라우저가 같은 주소로 받아 둔 영상을 다시 틀어서다. 주소가 바뀌면 새로 받는다. 영상 파일을 손으로 바꿨으면 `node tools/stamp_media.mjs`를 돌린다.
 - **바뀌는 형식** — H.264 main(level 4.0) · yuv420p · 720x720 · 30fps 이하 · AAC 128k · faststart(받는 중에 재생 시작). 영상 비트레이트는 1600kbps(소리까지 약 1.75Mbps)가 기본이라 붐비는 행사장 회선에서도 덜 멈춘다. 15초면 약 3.3MB. 같은 이름의 `.jpg`(첫 장면)도 만든다. 비트레이트는 `--kbps`, 상한은 `--max-mb`(기본 8)로 바꾼다.
 - **원본 조건** — 정사각형(아니면 가운데를 잘라 맞춘다), 첫 장면이 포스터 그림의 그 칸과 같아야 한다. 그 칸은 포스터 PDF 페이지 전체를 덮는 그림 928x1325 안에서 x 48~884, y 360~1196이다(`games.js`의 `DONT_OVERLAY`).
 - **15초판(v2)** — 받으면 위 한 줄로 바꾸고 `node tools/check.mjs --only dont,manual`로 확인한다. `tools/make_cams.py`의 사용금지 가짜 카메라는 영상이 도는 사이 5초부터 포스터를 놓치게 만들어져 있어 15초판에도 그대로 쓴다.

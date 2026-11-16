@@ -5,6 +5,7 @@
 //       15초면 약 3.3MB. 입자감 있는 그림이라 이보다 낮추면 뭉개진다(2026-11-13 1500·2000kbps 비교).
 //       --max-mb(기본 8)는 상한이다. 길이가 길어 한도를 넘으면 그만큼 낮춘다.
 // 쓰는 법: node tools/encode_video.mjs <원본.mp4> [결과.mp4] [--size 720] [--kbps 1600] [--max-mb 8]
+//          video/ 안에 쓰면 끝에 tools/stamp_media.mjs로 index.html의 영상 주소 판 번호(?v=)를 바꾼다
 //          결과를 빼면 video/dont.mp4(+ video/dont.jpg)에 쓴다(허브가 읽는 이름).
 // 필요: ffmpeg, ffprobe가 PATH에 있어야 한다.
 import { spawnSync } from 'node:child_process';
@@ -108,6 +109,8 @@ for (let attempt = 0; attempt < 3; attempt++) {
         `${r.duration.toFixed(2)}초 ${(size / 1048576).toFixed(2)}MB(평균 ${mbps}Mbps), 소리 ${r.a ? r.a.codec_name + ' ' + Math.round(r.a.bit_rate / 1000) + 'k' : '없음'}`,
     );
     console.log(`첫 장면 ${path.relative(ROOT, a.poster)}: ${(fs.statSync(a.poster).size / 1024).toFixed(0)}KB`);
+    // 허브가 읽는 영상이면 index.html의 주소 판 번호(?v=)를 새 내용에 맞춘다(폰이 예전 영상을 계속 틀지 않게)
+    if (path.dirname(a.out) === path.join(ROOT, 'video')) spawnSync(process.execPath, [path.join(ROOT, 'tools', 'stamp_media.mjs')], { stdio: 'inherit' });
     process.exit(0);
   }
   fs.rmSync(tmp, { force: true });
