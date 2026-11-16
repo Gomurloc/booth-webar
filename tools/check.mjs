@@ -8,9 +8,13 @@
 // - otr         포스터 인식 → 카드 → 사진 앱 포스터 AR(otr/?ar=1)로(허브가 카메라를 놓았는지, 사진 앱이 카메라를 켰는지) → "다른 게임"으로 허브
 // - dont        포스터 인식 → 카드 → 포스터 위 영상(재생 중) → 포스터를 놓침(가운데 보기) → 끝 → 다른 게임
 // - all6        ?targets=all6 로 사용금지 포스터 인식
-// - unmute      포스터 인식 → 카드 → 테스트 끝까지 → 결과 카드 PNG 저장(내려받기), 공유 시트 경로도
+// - unmute      포스터 인식 → 카드 → UNMUTE 팀 테스트 주소로 가는지(2026-11-16부터). 그다음 우리 시안(unmute/)을 끝까지 → 결과 카드 PNG 저장, 공유 시트 경로도
+// - site        직접 고르기로 사용금지 영상 → 끝 화면의 팀 사이트 단추 → do-not-access.com/ar/로 가는지
+// - site-cam    카메라로 사용금지 포스터 → 영상 끝 → 팀 사이트 → 뒤로 한 번이면 허브 첫 화면, 한 번 더면 허브를 떠나는지.
+//               그리고 팀 사이트가 늦게 뜰 때 뒤로 가기: "이동하는 중…"에 멈추지 않고 첫 화면으로 오는지
+//   (팀 사이트 둘은 시험에서 실제로 받지 않고 짧은 대역 페이지로 가로챈다)
 // - unmute-edit 팀이 test.json을 고친 경우(감정 빠짐, 설명이 긺) 결과 카드, 그리고 네 결과 카드 모두
-// - manual      카메라 없이 직접 고르기: 사용금지(화면 가운데 보기), OFF THE RECORD, UNMUTE
+// - manual      카메라 없이 직접 고르기: 사용금지(화면 가운데 보기), OFF THE RECORD(포스터 AR), UNMUTE(팀 테스트 주소)
 // - wall        포스터 없는 벽: 8초 뒤 "아래에서 고르세요"
 // - wall3       세 장이 나란히 걸린 벽: 앞에서 잡은 포스터가 가장자리에 남아도 가운데 포스터 카드로 바뀌는지
 // - race        인식 준비 중에 사용금지를 직접 고름(준비가 끝나도 영상이 그대로인지), 준비 중에 닫음
@@ -69,8 +73,14 @@ async function launch(cam, { fakeUi = true } = {}) {
   });
 }
 
+// 팀 사이트(UNMUTE 테스트, 사용금지 학교)는 시험에서 받지 않는다: 주소만 확인하도록 짧은 대역 페이지로 가로챈다
+const TEAM_SITES = /^https:\/\/(unmute-mp3\.github\.io|do-not-access\.com)\//;
+
 async function newPage(browser, rec, init, opts = {}) {
   const context = await browser.newContext({ ...PHONE, acceptDownloads: true, ...opts });
+  await context.route(TEAM_SITES, (route) =>
+    route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<!doctype html><meta charset="utf-8"><title>team stub</title><p id="team-stub">${route.request().url()}</p>` }),
+  );
   for (const f of [].concat(init ?? [])) await context.addInitScript(f);
   const page = await context.newPage();
   page.on('console', (m) => {
@@ -327,8 +337,11 @@ const scenarios = {
     await sleep(300);
     await shot(page, rec, 'unmute-1-card');
     await page.locator('#card-open').click();
-    await page.waitForURL(/\/unmute\/$/, { timeout: 10_000 });
-    rec.hubReleasedFirst = hubReleasedFirst(await readCamLog(page), '/unmute/'); // 이 페이지는 카메라를 안 연다: 허브가 놓았는지만
+    // 2026-11-16부터 카드는 UNMUTE 팀 테스트로 간다
+    await page.waitForURL(/^https:\/\/unmute-mp3\.github\.io\/unmute-test\/$/, { timeout: 10_000 });
+    rec.teamUrl = page.url();
+    // 우리 시안(unmute/)은 허브에서 열지 않지만 저장소에 남아 있어 그대로 시험한다
+    await page.goto(BASE + '/unmute/');
     await page.waitForFunction(() => window.__unmute?.screen === 'intro', null, { timeout: 15_000 });
     await page.evaluate(() => document.fonts.ready);
     await sleep(500);
@@ -466,10 +479,81 @@ const scenarios = {
     rec.otrOk = true;
     await page.goto(BASE + '/');
     await page.locator('.game-row[data-game="unmute"]').click();
-    await page.waitForURL(/\/unmute\/$/);
-    await page.waitForFunction(() => window.__unmute?.screen === 'intro');
+    await page.waitForURL(/^https:\/\/unmute-mp3\.github\.io\/unmute-test\/$/); // UNMUTE 팀 테스트(2026-11-16부터)
     rec.unmuteOk = true;
     await context.close();
+  },
+
+  // 사용금지 영상 끝 화면의 팀 사이트 단추(2026-11-16)
+  async site(browser, rec) {
+    const { page, context } = await newPage(browser, rec);
+    await page.goto(BASE + '/');
+    await page.locator('.game-row[data-game="dont"]').click();
+    await page.waitForFunction(() => window.__hub.dont().open && window.__hub.dont().time > 0.5, null, { timeout: 15_000 });
+    await page.evaluate(() => {
+      const v = document.getElementById('dont-video');
+      v.currentTime = Math.max(0, v.duration - 0.4);
+    });
+    await page.waitForSelector('#dont-end:not([hidden])', { timeout: 20_000 });
+    await sleep(500);
+    rec.siteLink = await page.evaluate(() => {
+      const a = document.getElementById('dont-site');
+      return { href: a.href, text: a.textContent, visible: !a.hidden && a.offsetParent !== null, focused: document.activeElement === a };
+    });
+    await shot(page, rec, 'site-1-dont-end');
+    await page.locator('#dont-site').click();
+    await page.waitForURL(/^https:\/\/do-not-access\.com\/ar\/$/, { timeout: 10_000 });
+    rec.siteUrl = page.url();
+    await context.close();
+    if (!rec.siteLink.visible) throw new Error('팀 사이트 단추가 안 보임');
+  },
+
+  async 'site-cam'(browser, rec) {
+    const { page, context } = await newPage(browser, rec);
+    await startScan(page, rec);
+    await waitCard(page, 'dont');
+    await page.locator('#card-open').click();
+    await page.waitForFunction(() => window.__hub.dont().open && window.__hub.dont().time > 0.5, null, { timeout: 20_000 });
+    rec.depthWhilePlaying = await hub(page, () => window.__hub.depth);
+    await page.evaluate(() => {
+      const v = document.getElementById('dont-video');
+      v.currentTime = Math.max(0, v.duration - 0.4);
+    });
+    await page.waitForSelector('#dont-end:not([hidden])', { timeout: 20_000 });
+    await sleep(400);
+    await page.locator('#dont-site').click();
+    await page.waitForURL(/^https:\/\/do-not-access\.com\/ar\/$/, { timeout: 10_000 });
+    // 돌아오기: 한 번이면 허브 첫 화면, 한 번 더면 허브를 떠난다(기록이 두 칸 쌓였던 것을 한 칸으로 줄이고 갔는지)
+    await page.goBack();
+    await page.waitForFunction(() => window.__hub?.state === 'landing', null, { timeout: 20_000 });
+    rec.back1 = page.url().replace(BASE, '');
+    await page.goBack().catch(() => null);
+    await sleep(600);
+    rec.back2 = page.url().replace(BASE, '');
+    // 다른 페이지로 가는 중(아직 안 뜸)에 뒤로 가기: 카메라 화면에서 UNMUTE를 누르고 바로 뒤로.
+    // (시험 도구가 요청을 붙잡으면 크롬이 옛 화면을 먼저 치워서 실제 폰과 달라진다. 그래서 이동을 부르기 전 0.25초 안에 누른다.
+    //  허브는 이동 전이든 이동 중이든 같은 popstate 처리로 첫 화면에 돌아온다)
+    await startScan(page, rec);
+    rec.stateBeforeBack = await page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          document.querySelector('.chip[data-game="unmute"]').click();
+          setTimeout(() => {
+            const st = window.__hub.state;
+            history.back();
+            resolve(st);
+          }, 60);
+        }),
+    );
+    await page.waitForFunction(() => window.__hub?.state === 'landing', null, { timeout: 5000 });
+    await sleep(1500); // 붙잡아 둔 이동이 뒤늦게 일어나지 않는지
+    rec.afterSlowBack = { url: page.url().replace(BASE, ''), state: await hub(page, () => window.__hub.state) };
+    await shot(page, rec, 'site-cam-after-slow-back');
+    await context.close();
+    if (rec.back1 !== '/') throw new Error('팀 사이트에서 뒤로 한 번에 허브 첫 화면이 아님: ' + rec.back1);
+    if (rec.back2 === '/') throw new Error('뒤로 한 번 더 눌러도 허브에 남음(기록이 두 칸)');
+    if (rec.stateBeforeBack !== 'leaving') throw new Error('늦은 이동 시험이 이동 중 상태가 아님: ' + rec.stateBeforeBack);
+    if (rec.afterSlowBack.state !== 'landing' || rec.afterSlowBack.url !== '/') throw new Error('늦은 이동 중 뒤로 가기 뒤 상태가 이상함: ' + JSON.stringify(rec.afterSlowBack));
   },
 
   async wall(browser, rec) {
@@ -860,7 +944,7 @@ const scenarios = {
 
 const CAM_FOR = {
   landing: 'wall', nojs: 'wall', inapp: 'wall', otr: 'otr', dont: 'dont', all6: 'dont', unmute: 'unmute', 'unmute-edit': 'wall',
-  manual: 'wall', wall: 'wall', wall3: 'wall3', race: 'dont', back: 'otr', slow: 'wall', 'slow-card': 'dont',
+  manual: 'wall', site: 'wall', 'site-cam': 'dont', wall: 'wall', wall3: 'wall3', race: 'dont', back: 'otr', slow: 'wall', 'slow-card': 'dont',
   'cam-errors': 'wall', denied: 'wall:noui', layout: 'wall', narrow: 'wall', cycle: 'wall', 'fail-load': 'wall', 'fail-gl': 'wall',
 };
 const names = Object.keys(scenarios).filter((n) => !ONLY || ONLY.includes(n));

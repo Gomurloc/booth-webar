@@ -59,7 +59,7 @@ function featherCanvas(size = 128) {
 }
 
 export class DontPlayer {
-  constructor({ onExit }) {
+  constructor({ onExit, onSite }) {
     const $ = (id) => document.getElementById(id);
     this.el = {
       layer: $('dont'),
@@ -74,8 +74,10 @@ export class DontPlayer {
       msg: $('dont-msg'),
       replay: $('dont-replay'),
       other: $('dont-other'),
+      site: $('dont-site'),
     };
     this.onExit = onExit;
+    this.onSite = onSite; // 팀 사이트로 갈 때(허브가 카메라를 놓고 간다)
     this.ar = null;
     this.targets = [];
     this.overlayIdx = new Set(); // 영상을 겹칠 수 있는 인식 대상 번호
@@ -109,6 +111,24 @@ export class DontPlayer {
     this.el.close.addEventListener('click', () => this.exit());
     this.el.other.addEventListener('click', () => this.exit());
     this.el.replay.addEventListener('click', () => this.replay());
+    // 팀 사이트 단추(games.js site). 없으면 숨긴다
+    const site = this.el.site;
+    if (site) {
+      if (GAMES.dont.site) {
+        site.href = GAMES.dont.site;
+        site.textContent = GAMES.dont.siteLabel ?? '사용금지 사이트';
+      } else {
+        site.hidden = true;
+        const note = document.getElementById('dont-site-note');
+        if (note) note.hidden = true;
+      }
+      site.addEventListener('click', (e) => {
+        if (!this.onSite) return; // 허브가 없으면 평범한 링크로
+        e.preventDefault();
+        this.close();
+        this.onSite(site.href);
+      });
+    }
     this.el.sound.addEventListener('click', () => {
       v.muted = false;
       this.el.sound.hidden = true;
@@ -435,7 +455,8 @@ export class DontPlayer {
     if (message) this.el.msg.textContent = message;
     this.el.end.hidden = false;
     this.el.replay.hidden = !!message;
-    (message ? this.el.other : this.el.replay).focus({ preventScroll: true });
+    const site = this.el.site && !this.el.site.hidden ? this.el.site : null;
+    (site ?? (message ? this.el.other : this.el.replay)).focus({ preventScroll: true });
   }
 
   failVideo() {

@@ -69,9 +69,10 @@ const hub = {
   fail: null,
 };
 // 방문 기록: depth = 허브가 쌓은 기록 수(카메라 화면 1 + 사용금지 영상 1), skip = 허브가 직접 되돌려서 무시할 popstate 수
-const nav = { depth: 0, skip: 0 };
+// afterSkip: 기록을 줄인 뒤(popstate를 받은 뒤) 할 일. 다른 페이지로 가기 전에 쌓인 기록을 한 칸으로 줄일 때 쓴다
+const nav = { depth: 0, skip: 0, afterSkip: null };
 
-const dont = new DontPlayer({ onExit: () => afterContent() });
+const dont = new DontPlayer({ onExit: () => afterContent(), onSite: (href) => leave(href) }); // 끝 화면 팀 사이트 단추: 카메라를 놓고 간다
 
 // ── 시험용 고리 ───────────────────────────────
 window.__hub = {
@@ -140,6 +141,21 @@ function syncHistory() {
 window.addEventListener('popstate', (e) => {
   if (nav.skip > 0) {
     nav.skip--;
+    if (nav.skip === 0 && nav.afterSkip) {
+      const f = nav.afterSkip;
+      nav.afterSkip = null;
+      f();
+    }
+    return;
+  }
+  // 다른 페이지로 가는 중(그 페이지가 아직 안 뜸)에 뒤로 가기: 브라우저가 이동을 취소하므로 허브 첫 화면으로 돌아온다.
+  // 팀 사이트처럼 다른 도메인은 뜨는 데 오래 걸려 행사장 회선에서 자주 겪는다(예전에는 "이동하는 중…"에 멈췄다)
+  if (hub.state === 'leaving') {
+    clearTimeout(hub.leaveTimer);
+    nav.afterSkip = null;
+    nav.depth = e.state?.hubDepth ?? 0;
+    log('back', { depth: nav.depth, leaving: true });
+    setState('landing');
     return;
   }
   nav.depth = e.state?.hubDepth ?? 0;
@@ -434,7 +450,32 @@ function leave(href) {
   setState('leaving');
   el.status.textContent = '이동하는 중…';
   const go = () => (nav.depth > 0 ? location.replace(href) : location.assign(href));
-  setTimeout(go, hadCamera ? LEAVE_DELAY_MS : 0);
+  const t0 = performance.now();
+  const delay = hadCamera ? LEAVE_DELAY_MS : 0;
+  const fire = () => {
+    clearTimeout(hub.leaveTimer);
+    hub.leaveTimer = setTimeout(go, Math.max(0, delay - (performance.now() - t0)));
+  };
+  if (nav.depth > 1) {
+    // 카메라 화면 위에 영상까지 열려 기록이 두 칸이면, 한 칸으로 줄인 뒤(popstate를 받은 뒤) 그 칸을 갈아 끼운다.
+    // 그대로 갈아 끼우면 돌아왔을 때 첫 화면 기록이 두 개가 되어 뒤로 가기가 한 번 헛돈다.
+    // 바로 이어서 이동을 부르면 기록 이동이 그 이동을 취소할 수 있어 popstate를 기다린다(안 오면 0.4초 뒤 그냥 간다)
+    try {
+      nav.skip++;
+      nav.afterSkip = fire;
+      history.go(1 - nav.depth);
+      nav.depth = 1;
+      hub.leaveTimer = setTimeout(() => {
+        if (nav.afterSkip !== fire) return;
+        nav.afterSkip = null; // skip은 그대로 둔다: 늦게 온 popstate를 뒤로 가기로 잘못 읽지 않게
+        fire();
+      }, 400);
+      return;
+    } catch {
+      nav.afterSkip = null;
+    }
+  }
+  fire();
 }
 
 // 사용금지 영상을 닫았을 때
@@ -522,8 +563,10 @@ document.addEventListener('visibilitychange', () => {
 // 뒤로 가기로 돌아오면(bfcache) 첫 화면부터
 window.addEventListener('pageshow', (e) => {
   if (!e.persisted) return;
+  clearTimeout(hub.leaveTimer);
   nav.depth = history.state?.hubDepth ?? 0;
   nav.skip = 0;
+  nav.afterSkip = null;
   if (hub.state !== 'landing') {
     stopScan();
     dont.close();
