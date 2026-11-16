@@ -363,8 +363,8 @@ const scenarios = {
       { timeout: 20_000 },
     );
     rec.afterOpen = await hub(page, () => window.__hub.umv());
-    // 흑백이 다 덮인 때(약 3.2초)와 글리치(약 7초)를 포스터 위에서 찍는다
-    for (const [t, name] of [[3.2, 'unmute-1b-gray'], [4.3, 'unmute-1c-wave'], [7.05, 'unmute-1d-glitch']]) {
+    // 흑백 숨 고르기(약 3.7초), 힘 모으기(약 6.2초), 컬러 파동(약 7.5초), 글리치(10.8~11.1초. 찍기까지 0.3초쯤 흐르니 조금 앞에서)를 포스터 위에서 찍는다
+    for (const [t, name] of [[3.7, 'unmute-1b-gray'], [6.2, 'unmute-1c-charge'], [7.5, 'unmute-1d-wave'], [10.6, 'unmute-1e-glitch']]) {
       await page.evaluate((t) => { document.getElementById('umv-video').currentTime = t; }, t);
       await sleep(300);
       await shot(page, rec, name);

@@ -1,12 +1,15 @@
-# UNMUTE 메인 포스터 애니메이션(UNMUTE 팀 연출안, 2026-11-16 둘째 판: "흑백 세상을 두 캐릭터가 컬러로 바꾼다"를 또렷하게)
-# 흐름
+# UNMUTE 메인 포스터 애니메이션(UNMUTE 팀 연출안. 2026-11-16 둘째 판 → 2026-11-17 15초 판: 흑백 뒤 숨 고르기 + 두 캐릭터가 힘을 모아 터뜨림)
+# 흐름(15초)
 # 1) 포스터 그대로 → 화면 바깥부터 원형으로 흑백이 안쪽으로(배경만). 흑백 세상은 어둡고 먹먹하게(네온이 꺼진 듯), 캐릭터는 컬러 + 옅은 색 테
-# 2) 흑백이 다 덮이면 두 손(소녀의 뻗은 손바닥, 소년의 브이 손)에서 색이 두 번 맥박처럼 새어 나왔다 꺼진다
-# 3) 두 손에서 컬러 파동이 터져 바깥으로(소녀 쪽 분홍, 소년 쪽 하늘색 물결 테). 지나간 자리는 원래보다 쨍했다가(채도·밝기·빛 번짐) 원래 색으로
-#    제목 UNMUTE는 파동이 닿으면 네온처럼 깜빡이며 켜진다
-# 4) 컬러인 채로 박자에 맞춰 글리치 → 5) 포스터 그대로로 돌아와 반복(처음 장면 = 끝 다음 장면 = 포스터)
-# 소리(만든 것): 처음엔 밝은 소리 → 흑백이 덮이며 먹먹해지고 작아짐 → 심장 소리 두 번 + 올라가는 소리 → 터질 때 쿵 + 화음 → 박자 → 글리치 때 끊김
-# 시간·세기·손 자리(아래 T, HANDS, GLITCH 등)는 연출안에 없던 것이라 이쪽에서 정했다
+# 2) 숨 고르기: 흑백 세상이 잠깐 멈춘다(색 테도 조금 가라앉고 소리도 거의 없다)
+# 3) 두 캐릭터가 힘을 모은다: 두 손(소녀의 뻗은 손바닥, 소년의 브이 손)으로 빛 알갱이가 빨려 들고, 손빛이 커지고, 색이 세 번 맥박처럼 점점 크게 새어 나온다.
+#    캐릭터 색이 짙어지고 색 테가 커진다. 터지기 직전 손빛이 한 점으로 줄고 세상이 살짝 더 어두워진다(숨 들이쉬기)
+# 4) 두 손에서 컬러 파동이 터져 바깥으로(소녀 쪽 분홍, 소년 쪽 하늘색 물결 테). 캐릭터가 한 번 툭 밀어내듯 커졌다 제자리로.
+#    지나간 자리는 원래보다 쨍했다가(채도·밝기·빛 번짐) 원래 색으로. 제목 UNMUTE는 파동이 닿으면 네온처럼 깜빡이며 켜진다
+# 5) 컬러인 채로 박자에 맞춰 글리치 → 6) 포스터 그대로로 돌아와 반복(처음 장면 = 끝 다음 장면 = 포스터)
+# 소리(만든 것): 처음엔 밝은 소리 → 흑백이 덮이며 먹먹해지고 작아짐 → 숨 고르기(거의 고요) → 빛 알갱이 소리 + 심장 소리 세 번 + 올라가는 소리
+#   → 터지기 직전 뚝 끊김 → 터질 때 쿵 + 화음 → 박자 → 글리치 때 끊김
+# 시간·세기·손 자리(아래 T, HANDS, GLITCH 등)는 연출안에 없던 것이라 이쪽에서 정했다(15초와 숨 고르기는 사용자 요청)
 # 입력: 포스터 원본(Poster_B2_MP3_Main.png, 2782x4000), 캐릭터 가리개(tools/unmute_mask.png, 흰색 = 캐릭터)
 #       가리개는 rembg(isnet-anime)로 딴 뒤 아래 디제이 장비를 배경으로 뺐다(README "UNMUTE 포스터 애니메이션")
 # 출력: 720x1036 영상(소리 포함, x264 거의 무손실) + 확인용 장면 모음(<out>_sheet.jpg)
@@ -28,27 +31,32 @@ FPS = 24
 
 # 시간표(초)
 T = {
-    'hold0': 0.4,    # 포스터 그대로
-    'gray': 1.8,     # 흑백 원이 바깥에서 안으로
-    'muted': 1.0,    # 흑백 세상. 두 손에서 색이 두 번 새어 나왔다 꺼짐
-    'wave': 2.0,     # 두 손에서 컬러 파동(지나간 자리는 쨍하게 → 원래 색)
-    'color': 0.4,    # 컬러
-    'glitch': 2.6,   # 박자 맞춘 글리치
-    'hold3': 0.9,    # 포스터 그대로(반복 이음매)
+    'hold0': 0.8,    # 포스터 그대로
+    'gray': 2.2,     # 흑백 원이 바깥에서 안으로
+    'breath': 1.4,   # 숨 고르기: 흑백 세상이 잠깐 멈춤
+    'act': 2.4,      # 두 캐릭터가 힘을 모음(빛 알갱이 → 맥박 세 번 → 숨 들이쉬기)
+    'wave': 2.2,     # 두 손에서 컬러 파동(지나간 자리는 쨍하게 → 원래 색)
+    'color': 0.6,    # 컬러
+    'glitch': 4.0,   # 박자 맞춘 글리치
+    'hold3': 1.4,    # 포스터 그대로(반복 이음매)
 }
 DUR = sum(T.values())
 N = int(round(DUR * FPS))
 t_gray0 = T['hold0']
-t_muted0 = t_gray0 + T['gray']
-t_wave0 = t_muted0 + T['muted']
+t_breath0 = t_gray0 + T['gray']
+t_act0 = t_breath0 + T['breath']
+t_wave0 = t_act0 + T['act']
 t_color0 = t_wave0 + T['wave']
 t_gl0 = t_color0 + T['color']
 t_hold3 = t_gl0 + T['glitch']
-PULSES = [t_muted0 + 0.2, t_muted0 + 0.62]  # 손에서 색이 새어 나오는 때(심장 소리와 같이)
+# 손에서 색이 새어 나오는 때(심장 소리와 같이): (힘 모으기 시작 뒤 초, 최대 반지름, 세기) — 점점 크게
+PULSES = [(0.55, 110, 0.6), (1.15, 150, 0.8), (1.62, 195, 1.0)]
+INHALE = 1.85    # 힘 모으기 시작 뒤 이 초부터 터질 때까지 숨 들이쉬기(손빛이 한 점으로, 세상이 살짝 어둡게)
+POP = 0.016      # 터질 때 캐릭터가 툭 커지는 정도(1.6%)
 BPM = 120
 BEAT = 60 / BPM  # 터진 뒤 박자(소리와 글리치를 맞춘다)
 # 글리치: 터진 때부터 박자 위(박자 번호, 길이 초, 세기)
-GLITCH = [(5, 0.12, 0.8), (6, 0.08, 1.0), (7, 0.30, 0.9), (8, 0.08, 1.0), (9, 0.28, 0.65)]
+GLITCH = [(6, 0.12, 0.8), (7, 0.08, 1.0), (7.5, 0.06, 0.7), (8, 0.30, 0.9), (10, 0.10, 1.0), (10.5, 0.08, 0.8), (11, 0.28, 0.7), (12.5, 0.12, 0.5)]
 
 # 두 손(720x1036 기준 픽셀)과 물결 테 색(BGR)
 HANDS = [
@@ -85,7 +93,15 @@ TM = np.zeros((OH, OW), np.float32)
 TM[ty0:ty1, tx0:tx1] = 1
 TM = cv2.GaussianBlur(TM, (0, 0), 6)
 TITLE_DIST = min(float(np.sqrt(((tx0 + tx1) / 2 - h['xy'][0]) ** 2 + ((ty0 + ty1) / 2 - h['xy'][1]) ** 2)) for h in HANDS)
-print(f'{DUR:.2f}초 {N}장, 원 가운데 ({CX:.0f}, {CY:.0f}), 터짐 {t_wave0:.2f}초, 글리치 {t_gl0:.2f}~{t_hold3:.2f}초')
+print(f'{DUR:.2f}초 {N}장, 원 가운데 ({CX:.0f}, {CY:.0f}), 숨 고르기 {t_breath0:.2f}초, 힘 모으기 {t_act0:.2f}초, 터짐 {t_wave0:.2f}초, 글리치 {t_gl0:.2f}~{t_hold3:.2f}초')
+# 손으로 빨려 드는 빛 알갱이(손마다 46개): 둘레에서 생겨 손으로 모인다
+prng = np.random.default_rng(21)
+SUCK = []
+for hi_ in range(len(HANDS)):
+    n_ = 46
+    SUCK.append(dict(hand=hi_, ang=prng.uniform(0, 2 * np.pi, n_), r0=prng.uniform(70, 190, n_),
+                     t0=prng.uniform(0.0, INHALE - 0.55, n_), life=prng.uniform(0.5, 0.85, n_),
+                     size=prng.uniform(1.1, 2.2, n_), spin=prng.uniform(-1.2, 1.2, n_)))
 
 
 def smooth(x):
@@ -128,20 +144,77 @@ def frame_gray(t):
     return compose(disk(r, R), halo=smooth(k) * 0.9)
 
 
-def frame_muted(t):
+def frame_breath(t):
+    # 숨 고르기: 흑백 세상이 멈춘다. 색 테만 조금 가라앉는다
+    k = (t - t_breath0) / T['breath']
+    return compose(0.0, halo=0.9 - 0.3 * smooth(k / 0.5))
+
+
+def suck_particles(s):
+    # 손으로 빨려 드는 빛 알갱이(s = 힘 모으기 시작 뒤 초)
+    out = np.zeros((OH, OW, 3), np.float32)
+    for sp in SUCK:
+        hx, hy = HANDS[sp['hand']]['xy']
+        tint = np.array(HANDS[sp['hand']]['tint'], np.float32)
+        for j in range(len(sp['ang'])):
+            u = (s - sp['t0'][j]) / sp['life'][j]
+            if u < 0 or u > 1:
+                continue
+            rr = sp['r0'][j] * (1 - u) ** 1.6
+            a = sp['ang'][j] + sp['spin'][j] * u
+            x, y = hx + rr * np.cos(a), hy + rr * np.sin(a)
+            al = smooth(u / 0.25) * (0.5 + 0.5 * u)
+            x0, x1 = int(max(0, x - 7)), int(min(OW, x + 8))
+            y0, y1 = int(max(0, y - 7)), int(min(OH, y + 8))
+            if x0 >= x1 or y0 >= y1:
+                continue
+            d2 = (xx[y0:y1, x0:x1] - x) ** 2 + (yy[y0:y1, x0:x1] - y) ** 2
+            g = al * np.exp(-d2 / (2 * sp['size'][j] ** 2))
+            out[y0:y1, x0:x1] += g[..., None] * (tint * 0.6 + 120)
+    return out
+
+
+def frame_act(t):
+    # 두 캐릭터가 힘을 모은다: 빛 알갱이가 손으로, 손빛이 커지고, 색이 세 번 점점 크게 새어 나옴, 끝에 숨 들이쉬기
+    s = t - t_act0
+    charge = smooth(s / 1.8)
+    inhale = smooth((s - INHALE) / (T['act'] - INHALE))
     amt = np.zeros((OH, OW), np.float32)
-    ring_img = 0
-    for tp in PULSES:
-        s = t - tp
-        if 0 <= s < 0.42:
-            rp = 30 + 110 * ease_out(s / 0.42)
-            fade = (1 - s / 0.42) ** 1.5
+    ring_img = np.zeros((OH, OW, 3), np.float32)
+    for tp, rmax, lv in PULSES:
+        u = s - tp
+        if 0 <= u < 0.45:
+            rp = 30 + (rmax - 30) * ease_out(u / 0.45)
+            fade = (1 - u / 0.45) ** 1.5 * lv
             for h, dist in zip(HANDS, RH):
                 amt = np.maximum(amt, disk(rp, dist) * fade)
                 ring = np.exp(-((dist - rp) / 6.0) ** 2) * fade * 0.9 * (1 - CH)
-                ring_img = ring_img + ring[..., None] * np.array(h['tint'], np.float32)
-    img = compose(amt, base=VIVID, halo=0.9)
-    return img + ring_img
+                ring_img += ring[..., None] * np.array(h['tint'], np.float32)
+    # 캐릭터 색이 짙어지고 색 테가 커진다
+    base = P + (VIVID - P) * (0.55 * charge)
+    img = compose(amt, base=base, halo=0.6 + 1.0 * charge)
+    # 숨 들이쉬기: 세상이 살짝 더 어둡게
+    img = img * (1 - 0.12 * inhale * (1 - CH[..., None]))
+    img += ring_img
+    # 손빛: 커지다가 숨 들이쉬기에 한 점으로 줄며 더 밝게
+    sig = (8 + 26 * charge) * (1 - 0.7 * inhale)
+    lvl = (0.25 + 0.75 * charge) * (1 + 0.8 * inhale) * (0.85 + 0.15 * np.sin(s * 11))
+    for h, dist in zip(HANDS, RH):
+        gl = np.exp(-(dist / sig) ** 2) * lvl
+        img += gl[..., None] * (np.array(h['tint'], np.float32) * 0.55 + 110)
+    img += suck_particles(s)
+    return img
+
+
+def pop(img, s):
+    # 터질 때 캐릭터가 툭 커졌다 제자리로(캐릭터 무게중심 기준)
+    z = 1 + POP * np.exp(-s / 0.16) * smooth(s / 0.04)
+    if z < 1.0005:
+        return img
+    M_ = np.float32([[z, 0, CX * (1 - z)], [0, z, CY * (1 - z)]])
+    layer = cv2.warpAffine(img, M_, (OW, OH), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+    a = cv2.warpAffine(CH, M_, (OW, OH), flags=cv2.INTER_LINEAR)[..., None]
+    return layer * a + img * (1 - a)
 
 
 def flicker_on(s):
@@ -168,7 +241,8 @@ def frame_wave(t):
     # 지나간 자리는 쨍하게 → 원래 색으로(터진 뒤 1.6초에 걸쳐)
     vivid_k = float(np.exp(-max(0.0, t - t_wave0) / 0.7))
     base = P + (VIVID - P) * vivid_k + BLOOM * (0.35 + 0.65 * vivid_k)
-    img = compose(inside, base=base, halo=0.9 * (1 - e))
+    img = compose(inside, base=base, halo=1.6 * (1 - e))
+    img = pop(img, t - t_wave0)
     amp = 9.0 * (1 - e) ** 0.6
     for h, dist in zip(HANDS, RH):
         img = ripple(img, h['xy'][0], h['xy'][1], dist, r, amp)
@@ -225,10 +299,12 @@ for i in range(N):
     t = i / FPS
     if t < t_gray0:
         f = P
-    elif t < t_muted0:
+    elif t < t_breath0:
         f = frame_gray(t)
+    elif t < t_act0:
+        f = frame_breath(t)
     elif t < t_wave0:
-        f = frame_muted(t)
+        f = frame_act(t)
     elif t < t_color0:
         f = frame_wave(t)
     elif t < t_gl0:
@@ -279,15 +355,17 @@ CHORD = [138.6, 164.8, 207.7, 277.2, 311.1]
 pad = sum(saw(f * (1 + 0.002 * j), ts) for j, f in enumerate(CHORD)) / len(CHORD)
 tt = ts
 c = np.where(tt < t_gray0, 5000.0,
-             np.where(tt < t_muted0, 5000.0 * (1 - smooth((tt - t_gray0) / T['gray'])) + 350.0 * smooth((tt - t_gray0) / T['gray']),
-                      np.where(tt < t_wave0, 350.0, 6000.0)))
+             np.where(tt < t_breath0, 5000.0 * (1 - smooth((tt - t_gray0) / T['gray'])) + 350.0 * smooth((tt - t_gray0) / T['gray']),
+                      np.where(tt < t_wave0, 350.0 - 120.0 * smooth((tt - t_breath0) / 0.8) + 260.0 * smooth((tt - t_act0) / T['act']), 6000.0)))
+# 숨 고르기에서 거의 고요 → 힘 모으기에서 조금씩 커짐 → 터지기 직전 0.14초 뚝 끊김
 g = np.where(tt < t_gray0, 1.0,
-             np.where(tt < t_muted0, 1 - 0.65 * smooth((tt - t_gray0) / T['gray']),
-                      np.where(tt < t_wave0, 0.35, 1.0)))
+             np.where(tt < t_breath0, 1 - 0.65 * smooth((tt - t_gray0) / T['gray']),
+                      np.where(tt < t_wave0, (0.35 - 0.25 * smooth((tt - t_breath0) / 0.6) + 0.25 * smooth((tt - t_act0) / 1.6))
+                               * (tt < t_wave0 - 0.14), 1.0)))
 pad_l = lowpass(pad, c) * g * db(-9)  # 처음 밝은 소리가 들려야 먹먹해지는 게 들린다
 # 터진 뒤 화음은 짧게 찌르고 박자마다 다시(스타브)
 stab_env = np.zeros_like(ts)
-for b in range(0, 10):
+for b in range(0, 15):
     tb = t_wave0 + b * BEAT
     if tb < t_hold3:
         stab_env += env(tb, 0.004, 0.18 if b else 0.9, 1.2) * (1.0 if b == 0 else 0.55)
@@ -311,12 +389,22 @@ def add_kick(t0, level, f0=95, f1=42, dec=0.22):
     kick[i0:i0 + n] += seg[: max(0, len(ts) - i0)]
 
 
-for tp in PULSES:
-    add_kick(tp, db(-10), 80, 38, 0.25)
-# 올라가는 소리(바람·잡음이 위로): 터지기 0.7초 전부터
+for (tp, _, lv) in PULSES:
+    add_kick(t_act0 + tp, db(-14 + 6 * lv), 80, 38, 0.25)
+# 올라가는 소리(바람·잡음이 위로): 터지기 1.3초 전부터, 터지기 직전 0.14초는 뚝 끊김
 noise = rng.standard_normal(len(ts))
-riser_k = np.clip((ts - (t_wave0 - 0.7)) / 0.7, 0, 1) * (ts < t_wave0)
+riser_k = np.clip((ts - (t_wave0 - 1.3)) / 1.16, 0, 1) * (ts < t_wave0 - 0.14)
 riser = lowpass(noise, 300 + 6000 * riser_k ** 2) * riser_k ** 2 * db(-14)
+# 빛 알갱이가 손에 닿을 때마다 작은 방울 소리
+gl_n = int(0.12 * SR)
+gl_t = np.arange(gl_n) / SR
+for sp in SUCK:
+    for j in range(len(sp['ang'])):
+        tg = t_act0 + sp['t0'][j] + sp['life'][j]
+        if tg < t_wave0 - 0.2:
+            seg = np.sin(2 * np.pi * (1800 + 900 * sp['hand'] + 300 * (j % 3)) * gl_t) * np.exp(-gl_t / 0.03) * db(-34)
+            i0 = int(tg * SR)
+            riser[i0:i0 + gl_n] += seg[: max(0, len(ts) - i0)]
 # 터지는 순간: 깊은 쿵 + 쉬익
 add_kick(t_wave0, db(-4), 120, 32, 0.55)
 crash = lowpass(noise, 9000.0) - lowpass(noise, 2500.0)
@@ -324,7 +412,7 @@ crash = crash * env(t_wave0, 0.002, 0.45, 2.0) * db(-12)
 # 박자: 쿵(정박)·칙(엇박) 터진 뒤부터 글리치 끝까지
 hat = np.zeros_like(ts)
 hiss = noise - lowpass(noise, 6000.0)
-for b in range(1, 12):
+for b in range(1, 15):
     tb = t_wave0 + b * BEAT
     if tb < t_hold3 - 0.05:
         add_kick(tb, db(-9), 110, 45, 0.16)
