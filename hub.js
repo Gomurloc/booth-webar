@@ -1,12 +1,13 @@
 // 허브 진입점. 상태: landing(첫 화면) → starting(카메라·인식 준비) → scanning(포스터 찾는 중) → card(찾은 게임 카드)
-//   → dont(허브 안에서 사용금지 영상) 또는 leaving(카메라를 놓고 otr/·unmute/로 이동).
+//   → dont(허브 안에서 사용금지 영상) · otrv(OFF THE RECORD 포스터 위 영상, 끝나면 사진 앱으로)
+//   또는 leaving(카메라를 놓고 otr/·팀 사이트로 이동).
 // 직접 고르기 단추는 어느 상태에서나 바로 그 게임으로 간다(인식이 안 돼도 쓸 수 있게).
 // 주소 옵션: ?targets=all6 이면 포스터 여섯 장 모두 인식(기본은 메인 셋).
 // 뒤로 가기: 카메라 화면·사용금지 영상을 열 때 방문 기록을 하나씩 쌓아서, 폰의 뒤로 가기가 허브를 떠나지 않고
 //   맨 위 화면을 닫게 한다(안드로이드 뒤로 가기 제스처).
 import { GAMES, GAME_ORDER, TARGET_SETS } from './games.js';
 import { HubAR, loadVendor, prefetchTargets, cancelPrefetch } from './ar.js';
-import { DontPlayer } from './dont/dont.js';
+import { PosterVideo } from './dont/dont.js';
 
 const query = new URLSearchParams(location.search);
 const SET = TARGET_SETS[query.get('targets')] ?? TARGET_SETS.main3;
@@ -72,7 +73,15 @@ const hub = {
 // afterSkip: 기록을 줄인 뒤(popstate를 받은 뒤) 할 일. 다른 페이지로 가기 전에 쌓인 기록을 한 칸으로 줄일 때 쓴다
 const nav = { depth: 0, skip: 0, afterSkip: null };
 
-const dont = new DontPlayer({ onExit: () => afterContent(), onSite: (href) => leave(href) }); // 끝 화면 팀 사이트 단추: 카메라를 놓고 간다
+const dont = new PosterVideo({ game: 'dont', onExit: () => afterContent(), onSite: (href) => leave(href) }); // 끝 화면 팀 사이트 단추: 카메라를 놓고 간다
+// OFF THE RECORD 포스터 위 영상(2026-11-16). 끝 화면 "사진 찍으러 가기"는 사진 앱 포스터 AR로(iOS 자이로 허락을 그 탭 안에서 묻는다)
+// 영상은 잔잔하게 움직이다 처음으로 돌아오는 반복 영상이라, 끝 화면 뒤에서도 소리 없이 계속 반복한다(loopEnd)
+const otrv = new PosterVideo({ game: 'otr', prefix: 'otrv', endBright: 0.75, loopEnd: true, onExit: () => afterContent(), onSite: () => openArGame('otr') });
+// 허브 안에서 여는 포스터 영상: 상태 이름 → 재생기, 게임 → 상태 이름
+const VIDEO = { dont, otrv };
+const VIDEO_STATE = { dont: 'dont', otr: 'otrv' };
+const video = () => VIDEO[hub.state] ?? null; // 지금 상태가 영상이면 그 재생기
+const openVideo = () => Object.values(VIDEO).find((p) => p.isOpen) ?? null;
 
 // ── 시험용 고리 ───────────────────────────────
 window.__hub = {
@@ -90,6 +99,7 @@ window.__hub = {
   },
   events: hub.events,
   dont: () => dont.debug(),
+  otrv: () => otrv.debug(),
   arRunning: () => !!hub.ar?.running,
   cameraTracks: () => hub.ar?.stream?.getTracks().filter((t) => t.readyState === 'live').length ?? 0,
   arSize: () => {
@@ -106,7 +116,7 @@ function setState(s) {
   el.scan.hidden = s === 'landing';
   if (s !== 'scanning' && s !== 'card' && s !== 'starting') clearTimeout(hub.hintTimer);
   // 카메라 화면이 다시 보이면 크기를 다시 잰다(숨겨진 사이 화면 크기·방향이 바뀌었을 수 있다)
-  if ((s === 'scanning' || s === 'card') && (prev === 'dont' || prev === 'landing')) requestAnimationFrame(() => hub.ar?.resize());
+  if ((s === 'scanning' || s === 'card') && (prev in VIDEO || prev === 'landing')) requestAnimationFrame(() => hub.ar?.resize());
   syncHistory();
 }
 
@@ -118,7 +128,7 @@ function log(type, data) {
 // ── 방문 기록(뒤로 가기) ───────────────────────
 function uiDepth() {
   const scanLayer = !!hub.ar || hub.state === 'starting' || hub.state === 'scanning' || hub.state === 'card';
-  return (scanLayer ? 1 : 0) + (dont.isOpen ? 1 : 0);
+  return (scanLayer ? 1 : 0) + (openVideo() ? 1 : 0);
 }
 
 function syncHistory() {
@@ -161,8 +171,9 @@ window.addEventListener('popstate', (e) => {
   nav.depth = e.state?.hubDepth ?? 0;
   log('back', { depth: nav.depth });
   // 맨 위 화면부터 닫는다
-  if (dont.isOpen && uiDepth() > nav.depth) {
-    dont.close();
+  const pv = openVideo();
+  if (pv && uiDepth() > nav.depth) {
+    pv.close();
     afterContent();
   }
   if (uiDepth() > nav.depth && hub.state !== 'landing') {
@@ -290,7 +301,7 @@ async function startScan() {
     ar.stop();
     return;
   }
-  dont.attach(ar, SET.targets);
+  for (const p of Object.values(VIDEO)) p.attach(ar, SET.targets);
   log('ready');
   // 준비하는 사이 직접 고르기로 사용금지를 열었으면 그대로 둔다(영상은 이제 포스터를 찾으면 위로 올라간다)
   if (hub.state === 'starting') setState('scanning');
@@ -299,7 +310,7 @@ async function startScan() {
 function stopScan() {
   hub.token++;
   clearTimeout(hub.hintTimer);
-  dont.detach();
+  for (const p of Object.values(VIDEO)) p.detach();
   hub.ar?.stop();
   hub.ar = null;
 }
@@ -312,7 +323,7 @@ function arFailed(err) {
   el.startLabel.textContent = '다시 시도';
   showNotice(FAIL_TEXT[kind] ?? FAIL_TEXT.failed);
   // 영상을 보는 중이었으면 화면 가운데 보기로 이어 가고, 닫을 때 첫 화면으로 간다
-  if (hub.state !== 'dont') {
+  if (!video()) {
     hideCard();
     setState('landing');
     el.notice.scrollIntoView({ block: 'center' });
@@ -343,7 +354,7 @@ function onFound(i) {
   const t = SET.targets[i];
   log('found', { index: i, game: t?.game });
   if (!t) return;
-  if (hub.state === 'dont') return dont.onFound(i);
+  if (video()) return video().onFound(i);
   if (hub.state !== 'scanning' && hub.state !== 'card') return;
   if (isDismissed(i)) {
     // "다른 포스터예요"를 누른 포스터: 계속 놓아줘서 옆의 다른 포스터를 찾게 한다
@@ -359,24 +370,27 @@ function onFound(i) {
 function onLost(i, info) {
   log('lost', { index: i, forced: !!info?.forced });
   if (!info?.forced) hub.dismissed.delete(i); // 정말로 놓쳤다가 다시 찾으면 다시 묻는다
-  if (hub.state === 'dont') dont.onLost(i);
+  video()?.onLost(i);
   // 카드는 그대로 둔다(폰을 내려 단추를 누르는 사이에 놓쳐도 된다)
 }
 
 // ── 카드 ──────────────────────────────────────
 function showCard(gameId, index) {
   const g = GAMES[gameId];
-  const same = hub.card?.game === gameId;
-  hub.card = { game: gameId, index, at: performance.now() };
+  // 포스터 위 영상을 틀 수 있는 포스터(겹칠 자리가 있는 OFF THE RECORD 메인 포스터)면 카드 글을 영상 쪽으로
+  const live = g.live && SET.targets[index]?.overlay ? g.live : null;
+  const same = hub.card?.game === gameId && hub.card?.live === !!live;
+  hub.card = { game: gameId, index, at: performance.now(), live: !!live };
   if (same && hub.state === 'card') return;
   el.cardThumb.src = g.thumb;
   el.cardName.textContent = g.name;
   el.cardLine.textContent = g.line;
-  el.cardWhat.textContent = g.what;
-  el.cardOpen.textContent = g.open;
+  el.cardWhat.textContent = live?.what ?? g.what;
+  el.cardOpen.textContent = live?.open ?? g.open;
   el.sheet.dataset.view = 'card';
   setState('card');
   if (gameId === 'dont') dont.preload();
+  else if (live) otrv.preload();
   el.cardOpen.focus({ preventScroll: true });
   log('card', { game: gameId, index });
 }
@@ -389,6 +403,7 @@ function hideCard() {
 el.cardOpen.addEventListener('click', () => {
   if (!hub.card) return;
   const g = GAMES[hub.card.game];
+  if (hub.card.live) return openGame(hub.card.game, { live: true }); // 포스터 위 영상부터(끝 화면에서 사진 앱으로)
   if (!g?.arHref) return openGame(hub.card.game);
   openArGame(hub.card.game, el.cardOpen);
 });
@@ -427,16 +442,18 @@ el.cardDismiss.addEventListener('click', () => {
 
 // ── 게임 열기 ─────────────────────────────────
 // ar: 사진 앱을 포스터 AR로 연다(포스터 카드, 그리고 2026-11-14부터 직접 고르기도. openArGame)
-function openGame(id, { ar = false } = {}) {
+// live: 허브 안에서 포스터 위 영상을 튼다(OFF THE RECORD 메인 포스터 카드). 사용금지는 늘 영상
+function openGame(id, { ar = false, live = false } = {}) {
   const g = GAMES[id];
   if (!g || hub.state === 'leaving') return;
-  log('open', { game: id, via: hub.state });
-  if (id === 'dont') {
+  log('open', { game: id, via: hub.state, live });
+  if (id === 'dont' || (live && VIDEO_STATE[id])) {
+    const state = VIDEO_STATE[id];
     hideCard();
     clearTimeout(hub.hintTimer);
     if (!hub.ar) stopWarm(); // 첫 화면 미리 받기가 영상과 회선을 나눠 쓰지 않게
-    dont.open(); // 클릭 안에서 바로 재생(소리)
-    setState('dont');
+    VIDEO[state].open(); // 클릭 안에서 바로 재생(소리)
+    setState(state);
     return;
   }
   leave(ar && g.arHref ? g.arHref : g.href);
@@ -479,7 +496,7 @@ function leave(href) {
   fire();
 }
 
-// 사용금지 영상을 닫았을 때
+// 포스터 영상(사용금지·OFF THE RECORD)을 닫았을 때
 function afterContent() {
   if (hub.ar?.running) {
     // 지금 보이는 포스터는 카드를 다시 띄우지 않는다(방금 본 게임)
@@ -527,7 +544,7 @@ const warmState = { handle: 0, idle: false, stopped: false };
 function warm() {
   warmState.handle = 0;
   prefetchTargets(SET.file).promise.then(
-    () => warmState.stopped || hub.state === 'dont' || loadVendor().catch(() => {}),
+    () => warmState.stopped || !!video() || loadVendor().catch(() => {}),
     () => {},
   );
 }
@@ -550,8 +567,8 @@ if (!el.start.disabled) {
 // 다른 앱으로 가면 카메라를 놓는다(배터리·iOS가 카메라를 끊는 문제). 영상은 멈추고 끝 화면에서 다시 보게 한다
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'hidden') return;
-  if (hub.state === 'dont') {
-    dont.suspend();
+  if (video()) {
+    video().suspend();
     if (hub.ar) stopScan();
     syncHistory();
   } else if (hub.ar || hub.state === 'starting') {
@@ -570,7 +587,7 @@ window.addEventListener('pageshow', (e) => {
   nav.afterSkip = null;
   if (hub.state !== 'landing') {
     stopScan();
-    dont.close();
+    for (const p of Object.values(VIDEO)) p.close();
     hideCard();
     setState('landing');
   }

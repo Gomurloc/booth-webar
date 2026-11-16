@@ -126,5 +126,35 @@
     <button id="dont-other" class="btn big dont-ghost" type="button">다른 게임</button>
   </div>
 </section>
+
+<!-- ── OFF THE RECORD: 포스터 위 영상(2026-11-16). 사용금지와 같은 재생기·배치(dont 클래스)에 색만 otrv로 바꾼다 ── -->
+<section id="otrv" class="dont otrv" data-mode="screen" aria-label="OFF THE RECORD 포스터 영상" hidden>
+  <div class="dont-bg" aria-hidden="true"></div>
+  <div class="dont-stage">
+    <video id="otrv-video" src="video/otr.mp4?v=63b1d0ae" poster="video/otr.jpg?v=63b1d0ae" playsinline webkit-playsinline preload="none" aria-label="OFF THE RECORD 포스터 영상"></video>
+  </div>
+  <div class="dont-black" aria-hidden="true"></div>
+  <header class="dont-top">
+    <button id="otrv-close" class="btn pill dont-ghost" type="button" aria-label="영상 닫기">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>닫기
+    </button>
+    <button id="otrv-sound" class="btn pill dont-solid" type="button" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4Z"/><path d="M15.5 9a4.5 4.5 0 0 1 0 6M18 6.5a8 8 0 0 1 0 11"/></svg>소리 켜기
+    </button>
+  </header>
+  <p id="otrv-hint" class="dont-hint" hidden>포스터를 비추면 포스터 위로 돌아가요</p>
+  <p id="otrv-load" class="dont-load" role="status" hidden><span class="spinner" aria-hidden="true"></span><span id="otrv-load-text">불러오는 중…</span></p>
+  <div id="otrv-end" class="dont-end" hidden>
+    <!-- 포스터가 끝까지 남아 있어 제목 그림은 두지 않는다(CSS로 숨김). 재생기가 장르 줄을 채우는 자리만 둔다 -->
+    <div class="dont-end-head">
+      <p id="otrv-end-line" class="dont-end-line"></p>
+    </div>
+    <p id="otrv-msg" class="dont-msg" hidden></p>
+    <!-- 사진 앱 포스터 AR(games.js site). 허브가 iOS 자이로 허락을 이 탭 안에서 묻고 간다 -->
+    <a id="otrv-site" class="btn big dont-solid" href="otr/?ar=1">사진 찍으러 가기</a>
+    <button id="otrv-replay" class="btn big dont-ghost" type="button">다시 보기</button>
+    <button id="otrv-other" class="btn big dont-ghost" type="button">다른 게임</button>
+  </div>
+</section>
 </body>
 </html>

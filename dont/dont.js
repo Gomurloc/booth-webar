@@ -1,5 +1,7 @@
-// 사용금지: 포스터 그림이 살아 움직이는 영상.
+// 포스터 그림이 살아 움직이는 영상(사용금지에서 시작해 2026-11-16부터 OFF THE RECORD도 같이 쓴다).
 // 영상 첫 장면 = 포스터 그림이라, 포스터 위 같은 자리에 겹쳐 틀면 포스터가 움직이기 시작하는 것처럼 보인다.
+// 게임마다 한 개씩 만든다: new PosterVideo({ game: 'dont' }), new PosterVideo({ game: 'otr', prefix: 'otrv' }).
+// 화면 요소 id는 prefix로 시작한다(#dont, #dont-video …). 끝 화면 머리 줄·다음 단추 주소와 글은 games.js에서 읽는다.
 //
 // 보기 방식(mode)
 // - ar: 인식된 포스터 위에 WebGL 판으로 겹친다(MindAR 앵커에 붙인 판, 텍스처 = 같은 <video>).
@@ -58,26 +60,34 @@ function featherCanvas(size = 128) {
   return c;
 }
 
-export class DontPlayer {
-  constructor({ onExit, onSite }) {
-    const $ = (id) => document.getElementById(id);
+export class PosterVideo {
+  // endBright: 끝날 때 포스터 위 판을 어디까지 어둡게 할지(0 = 검게). 사용금지는 검게 사라지고,
+  //   OFF THE RECORD는 포스터를 남긴 채 끝 화면 단추가 읽히게만 어둡게 한다
+  // loopEnd: 한 번 다 튼 뒤 끝 화면을 띄우고 영상은 소리 없이 계속 반복한다(처음과 끝 장면이 같은 반복 영상.
+  //   OFF THE RECORD: 끝 화면 뒤에서도 포스터가 계속 살아 움직인다)
+  constructor({ game = 'dont', prefix = game, endBright = 0, loopEnd = false, onExit, onSite }) {
+    const $ = (id) => document.getElementById(`${prefix}${id}`);
+    this.game = game;
+    this.endBright = endBright;
+    this.loopEnd = loopEnd;
     this.el = {
-      layer: $('dont'),
-      video: $('dont-video'),
-      close: $('dont-close'),
-      sound: $('dont-sound'),
-      hint: $('dont-hint'),
-      load: $('dont-load'),
-      loadText: $('dont-load-text'),
-      end: $('dont-end'),
-      endLine: $('dont-end-line'),
-      msg: $('dont-msg'),
-      replay: $('dont-replay'),
-      other: $('dont-other'),
-      site: $('dont-site'),
+      layer: $(''),
+      video: $('-video'),
+      close: $('-close'),
+      sound: $('-sound'),
+      hint: $('-hint'),
+      load: $('-load'),
+      loadText: $('-load-text'),
+      end: $('-end'),
+      endLine: $('-end-line'),
+      msg: $('-msg'),
+      replay: $('-replay'),
+      other: $('-other'),
+      site: $('-site'),
+      siteNote: $('-site-note'),
     };
     this.onExit = onExit;
-    this.onSite = onSite; // 팀 사이트로 갈 때(허브가 카메라를 놓고 간다)
+    this.onSite = onSite; // 끝 화면 다음 단추(사용금지: 팀 사이트, OFF THE RECORD: 사진 앱). 허브가 카메라를 놓고 간다
     this.ar = null;
     this.targets = [];
     this.overlayIdx = new Set(); // 영상을 겹칠 수 있는 인식 대상 번호
@@ -96,7 +106,8 @@ export class DontPlayer {
     this.stalled = false; // 재생 중 데이터가 모자라 기다리는 중(브라우저가 멈춘 것)
     this.log = [];
     this.loadLog = []; // 시험용: 불러오는 중 표시가 뜬 구간
-    this.el.endLine.textContent = GAMES.dont.line;
+    const g = GAMES[game];
+    this.el.endLine.textContent = g.line;
 
     const v = this.el.video;
     v.playsInline = true;
@@ -111,16 +122,15 @@ export class DontPlayer {
     this.el.close.addEventListener('click', () => this.exit());
     this.el.other.addEventListener('click', () => this.exit());
     this.el.replay.addEventListener('click', () => this.replay());
-    // 팀 사이트 단추(games.js site). 없으면 숨긴다
+    // 끝 화면 다음 단추(games.js site·siteLabel). 없으면 숨긴다
     const site = this.el.site;
     if (site) {
-      if (GAMES.dont.site) {
-        site.href = GAMES.dont.site;
-        site.textContent = GAMES.dont.siteLabel ?? '사용금지 사이트';
+      if (g.site) {
+        site.href = g.site;
+        site.textContent = g.siteLabel ?? g.name;
       } else {
         site.hidden = true;
-        const note = document.getElementById('dont-site-note');
-        if (note) note.hidden = true;
+        if (this.el.siteNote) this.el.siteNote.hidden = true;
       }
       site.addEventListener('click', (e) => {
         if (!this.onSite) return; // 허브가 없으면 평범한 링크로
@@ -142,7 +152,7 @@ export class DontPlayer {
     if (v.preload !== 'auto') v.preload = 'auto';
   }
 
-  // 인식이 켜진 뒤 한 번. 사용금지 대상마다 영상 판을 앵커에 붙인다.
+  // 인식이 켜진 뒤 한 번. 이 게임의 겹칠 자리(overlay)가 있는 대상마다 영상 판을 앵커에 붙인다.
   // 인식 준비 중에 영상을 먼저 열었으면(직접 고르기) 여기서부터 포스터를 찾으면 올라가게 한다
   attach(ar, targets) {
     this.detach();
@@ -166,7 +176,7 @@ export class DontPlayer {
     this.texture = tex;
     this.alphaTex = alpha;
     targets.forEach((t, i) => {
-      if (t.game !== 'dont' || !t.overlay) return;
+      if (t.game !== this.game || !t.overlay) return;
       const r = t.overlay;
       const h = ar.aspect(i); // 앵커 공간: 폭 1 = 포스터 폭, 가운데가 원점, 위가 +y
       const geo = new T.PlaneGeometry(r.x1 - r.x0, (r.y1 - r.y0) * h);
@@ -212,12 +222,12 @@ export class DontPlayer {
     return -1;
   }
 
-  // 지금 보이는 포스터가 영상을 겹칠 수 없는 사용금지 포스터인지(?targets=all6의 두 번째 포스터)
+  // 지금 보이는 포스터가 영상을 겹칠 수 없는 같은 게임 포스터인지(?targets=all6의 두 번째 포스터)
   plainDontVisible() {
     if (!this.ar) return false;
     for (const i of this.ar.visible) {
       const t = this.targets[i];
-      if (t?.game === 'dont' && !t.overlay) return true;
+      if (t?.game === this.game && !t.overlay) return true;
     }
     return false;
   }
@@ -234,6 +244,7 @@ export class DontPlayer {
     this.el.end.hidden = true;
     this.el.msg.hidden = true;
     this.el.sound.hidden = true;
+    v.loop = false;
     v.preload = 'auto';
     if (v.readyState > 0) v.currentTime = 0;
     this.startPlayback();
@@ -422,7 +433,7 @@ export class DontPlayer {
     this.lastTick = now;
     if (!this.material) return;
     const wantOpacity = this.isOpen && this.mode === 'ar' && this.hasFrame ? 1 : 0;
-    const wantBright = this.ending ? 0 : 1;
+    const wantBright = this.ending ? this.endBright : 1;
     const fadeIn = reduceMotion.matches ? 1 : Math.min(1, dt / FADE_IN_MS);
     const fadeOut = reduceMotion.matches ? 1 : Math.min(1, dt / FADE_OUT_MS);
     this.opacity += (wantOpacity - this.opacity) * (wantOpacity > this.opacity ? fadeIn * 2 : fadeIn);
@@ -445,6 +456,14 @@ export class DontPlayer {
     this.stopHold();
     this.updateLoad();
     this.el.layer.classList.add('is-ending');
+    if (this.loopEnd) {
+      // 끝 화면 뒤에서 소리 없이 처음부터 계속 반복(ended가 다시 오지 않는다)
+      const v = this.el.video;
+      v.loop = true;
+      v.muted = true;
+      this.el.sound.hidden = true;
+      this.playQuiet();
+    }
     clearTimeout(this.timers.end);
     this.timers.end = setTimeout(() => this.showEnd(), reduceMotion.matches ? 0 : END_PANEL_DELAY_MS);
   }
@@ -474,6 +493,7 @@ export class DontPlayer {
     this.ending = false;
     this.bright = 1;
     const v = this.el.video;
+    v.loop = false;
     v.currentTime = 0;
     this.startPlayback();
     const i = this.overlayVisible();
@@ -500,6 +520,7 @@ export class DontPlayer {
     this.stopHold();
     const v = this.el.video;
     v.pause();
+    v.loop = false;
     this.hasFrame = false;
     this.opacity = 0;
     if (this.material) this.material.opacity = 0;
@@ -524,6 +545,7 @@ export class DontPlayer {
       time: Number(v.currentTime.toFixed(2)),
       paused: v.paused,
       muted: v.muted,
+      loop: v.loop,
       ready: v.readyState,
       loading: !this.el.load.hidden,
       hint: !this.el.hint.hidden,

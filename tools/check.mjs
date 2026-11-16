@@ -5,7 +5,8 @@
 // - landing     첫 화면, 가로 넘침 없음
 // - nojs        스크립트가 꺼져도 첫 화면에 세 게임 링크가 있는지
 // - inapp       카카오톡 안 브라우저(UA)면 바깥 브라우저로 여는 안내가 뜨는지
-// - otr         포스터 인식 → 카드 → 사진 앱 포스터 AR(otr/?ar=1)로(허브가 카메라를 놓았는지, 사진 앱이 카메라를 켰는지) → "다른 게임"으로 허브
+// - otr         포스터 인식 → 카드 → 포스터 위 영상(2026-11-16) → 끝 화면 "사진 찍으러 가기" → 사진 앱 포스터 AR(otr/?ar=1)
+//               (허브가 카메라를 놓았는지, 사진 앱이 카메라를 켰는지) → "다른 게임"으로 허브
 // - dont        포스터 인식 → 카드 → 포스터 위 영상(재생 중) → 포스터를 놓침(가운데 보기) → 끝 → 다른 게임
 // - all6        ?targets=all6 로 사용금지 포스터 인식
 // - unmute      포스터 인식 → 카드 → UNMUTE 팀 테스트 주소로 가는지(2026-11-16부터). 그다음 우리 시안(unmute/)을 끝까지 → 결과 카드 PNG 저장, 공유 시트 경로도
@@ -235,9 +236,34 @@ const scenarios = {
     rec.cardMs = await waitCard(page, 'otr');
     await sleep(400);
     await shot(page, rec, 'otr-2-card');
-    rec.hubTracksBefore = await hub(page, () => window.__hub.cameraTracks());
+    rec.card = await page.evaluate(() => ({ what: document.getElementById('card-what').textContent, open: document.getElementById('card-open').textContent }));
+    // 2026-11-16부터 메인 포스터 카드는 포스터 위 영상부터 튼다(잔잔하게 움직이는 반복 영상) → 끝 화면 "사진 찍으러 가기"
     await page.locator('#card-open').click();
-    await page.waitForURL(/\/otr\/\?ar=1$/, { timeout: 10_000 }); // 포스터 카드에서는 사진 앱 포스터 AR
+    await page.waitForFunction(
+      () => {
+        const d = window.__hub.otrv();
+        return window.__hub.state === 'otrv' && d.mode === 'ar' && d.opacity > 0.98 && d.time > 1.2;
+      },
+      null,
+      { timeout: 20_000 },
+    );
+    rec.afterOpen = await hub(page, () => window.__hub.otrv());
+    // 끝 무렵으로 넘겨 포스터 위에 겹친 모습을 찍는다(앞부분은 포스터와 똑같아 겹친 자리가 안 보인다)
+    await page.evaluate(() => {
+      const v = document.getElementById('otrv-video');
+      v.currentTime = Math.max(0, v.duration - 0.9);
+    });
+    await sleep(350);
+    await shot(page, rec, 'otr-2b-overlay-late');
+    await page.waitForSelector('#otrv-end:not([hidden])', { timeout: 20_000 });
+    await sleep(500);
+    rec.atEnd = await hub(page, () => ({ ...window.__hub.otrv(), focused: document.activeElement?.id }));
+    // 끝 화면 뒤에서 영상이 소리 없이 계속 반복하는지(loopEnd)
+    if (!rec.atEnd.loop || rec.atEnd.paused || !rec.atEnd.muted) throw new Error('끝 화면 뒤 반복이 아님: ' + JSON.stringify(rec.atEnd));
+    await shot(page, rec, 'otr-2c-end');
+    rec.hubTracksBefore = await hub(page, () => window.__hub.cameraTracks());
+    await page.locator('#otrv-site').click();
+    await page.waitForURL(/\/otr\/\?ar=1$/, { timeout: 10_000 }); // 끝 화면에서 사진 앱 포스터 AR
     await page.waitForFunction(() => window.__booth?.ready === true, null, { timeout: 60_000 });
     // 허브가 카메라를 놓은 뒤에 사진 앱이 카메라를 열었는지
     rec.hubReleasedFirst = hubReleasedFirst(await readCamLog(page), '/otr/');
@@ -682,10 +708,18 @@ const scenarios = {
     await page.goBack();
     await waitState(page, 'landing', 10_000);
     rec.step3b = { url: page.url(), state: await hub(page, () => window.__hub.state) };
-    // ④ 카메라 → 카드 → 사진 앱 → 뒤로 → 허브 첫 화면
+    // ④ 카메라 → 카드 → 포스터 위 영상(기록 두 칸) → 끝 화면 "사진 찍으러 가기" → 사진 앱 → 뒤로 → 허브 첫 화면(한 번에)
     await page.locator('#start').click();
     await waitCard(page, 'otr');
     await page.locator('#card-open').click();
+    await page.waitForFunction(() => window.__hub.otrv().open && window.__hub.otrv().time > 0.3, null, { timeout: 20_000 });
+    rec.depthScanOtrv = await hub(page, () => window.__hub.depth);
+    await page.evaluate(() => {
+      const v = document.getElementById('otrv-video');
+      v.currentTime = Math.max(0, v.duration - 0.3);
+    });
+    await page.waitForSelector('#otrv-end:not([hidden])', { timeout: 20_000 });
+    await page.locator('#otrv-site').click();
     await page.waitForURL(/\/otr\/\?ar=1$/, { timeout: 10_000 });
     await page.waitForFunction(() => window.__booth?.ready === true, null, { timeout: 60_000 });
     await page.goBack();

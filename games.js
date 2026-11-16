@@ -17,6 +17,11 @@ export const GAMES = {
     thumb: 'img/otr.jpg',
     href: 'otr/',
     arHref: 'otr/?ar=1',
+    // 포스터 위 영상(2026-11-16): 메인 포스터를 알아본 카드는 이 영상부터 튼다(포스터가 잔잔하게 움직이는 반복 영상).
+    // 끝 화면의 site 단추로 사진 앱 포스터 AR에 간다. 직접 고르기는 지금처럼 사진 앱으로 바로 간다
+    live: { what: '포스터가 움직여요 · 끝나면 함께 사진', open: '포스터 움직이기' },
+    site: 'otr/?ar=1',
+    siteLabel: '사진 찍으러 가기',
   },
   dont: {
     id: 'dont',
@@ -49,6 +54,8 @@ export const GAME_ORDER = ['otr', 'dont', 'unmute'];
 // 2026-11-14부터 영상이 포스터 전체(제목 아래로 "뒤돌아보지마" 핏빛 글자가 써짐)를 덮는다. 영상 크기 720x1028 = 포스터 비율.
 // 예전 장면 칸만 덮던 값: x 48~884, y 360~1196 / 928x1325(정사각형 영상)
 export const DONT_OVERLAY = { x0: 0, y0: 0, x1: 1, y1: 1 };
+// OFF THE RECORD 메인 포스터 위 영상(2026-11-16): 포스터 전체를 덮는다. 영상 크기 = 포스터 비율(1113:1600)
+export const OTR_OVERLAY = { x0: 0, y0: 0, x1: 1, y1: 1 };
 
 // 인식 대상 묶음. MindAR는 앞 번호부터 맞춰 보고 처음 맞는 하나만 따라간다.
 // 기본은 메인 포스터 셋(게임끼리 헷갈림 0, 측정). ?targets=all6 이면 여섯 장 모두(같은 게임 두 장은 같은 콘텐츠)
@@ -56,7 +63,7 @@ export const TARGET_SETS = {
   main3: {
     file: 'targets/targets_main3.mind',
     targets: [
-      { game: 'otr', poster: '3U_Main' },
+      { game: 'otr', poster: '3U_Main', overlay: OTR_OVERLAY },
       { game: 'dont', poster: 'Dont_Main', overlay: DONT_OVERLAY },
       { game: 'unmute', poster: 'MP3_Main' },
     ],
@@ -64,7 +71,7 @@ export const TARGET_SETS = {
   all6: {
     file: 'targets/targets_all6.mind',
     targets: [
-      { game: 'otr', poster: '3U_Main' },
+      { game: 'otr', poster: '3U_Main', overlay: OTR_OVERLAY },
       { game: 'otr', poster: '3U_Second' },
       { game: 'dont', poster: 'Dont_Main', overlay: DONT_OVERLAY },
       // 두 번째 포스터는 그림 배치가 달라 영상을 겹치지 않고 화면 가운데에 띄운다

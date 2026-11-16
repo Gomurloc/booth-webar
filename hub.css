@@ -193,7 +193,8 @@ body[data-hint="on"] .chip { border-color: var(--line-strong); background: var(-
 /* 상태마다 보이는 것 */
 body[data-state="landing"] .scan { display: none; }
 body:not([data-state="landing"]) .landing { display: none; }
-body[data-state="dont"] .scan-ui { visibility: hidden; }
+body[data-state="dont"] .scan-ui,
+body[data-state="otrv"] .scan-ui { visibility: hidden; } /* 포스터 위 영상(사용금지·OFF THE RECORD)이 도는 동안 */
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }

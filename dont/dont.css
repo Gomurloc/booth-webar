@@ -1,15 +1,18 @@
-/* 사용금지: 포스터의 붉은 갈색·입자감을 빌린다. 허브 위에 덮는 층 */
+/* 포스터 위 영상 층(허브 위에 덮는다). 사용금지: 포스터의 붉은 갈색·입자감을 빌린다.
+   OFF THE RECORD(.otrv, 2026-11-16)는 같은 배치에 색과 영상 비율만 바꾼다(맨 아래) */
 .dont {
   --dont-red: #c4362b;
   --dont-ink: #f0e2d8;
   --dont-bg: #140806;
+  --dont-glow: rgb(70 22 14 / 0.55);
+  --pv-ar: 0.7004; /* 영상 폭 ÷ 높이(포스터 비율) */
   position: fixed; inset: 0; z-index: 20; overflow: hidden;
   color: var(--dont-ink);
 }
 .dont-bg {
   position: absolute; inset: 0; opacity: 0; transition: opacity 0.35s ease;
   background:
-    radial-gradient(120% 80% at 50% 45%, rgb(70 22 14 / 0.55), transparent 70%),
+    radial-gradient(120% 80% at 50% 45%, var(--dont-glow), transparent 70%),
     var(--dont-bg);
 }
 /* 입자감: 작은 잡음 타일(SVG 난류). 포스터의 거친 질감 */
@@ -24,7 +27,7 @@
 .dont-stage {
   position: absolute; left: 50%; top: 50%;
   /* 영상이 포스터 전체 비율(928:1325)이라 높이를 기준으로 폭을 정한다 */
-  width: min(100vw, (100dvh - 220px - var(--safe-t, 0px) - var(--safe-b, 0px)) * 0.7004, 720px); aspect-ratio: 928 / 1325;
+  width: min(100vw, (100dvh - 220px - var(--safe-t, 0px) - var(--safe-b, 0px)) * var(--pv-ar), 720px); aspect-ratio: var(--pv-ar);
   transform: translate(-50%, -50%);
   opacity: 0; transition: opacity 0.35s ease;
   pointer-events: none;
@@ -86,7 +89,7 @@
 
 /* 가로 화면(폰을 눕힘): 영상이 높이를 거의 다 쓰고, 끝 화면 단추는 오른쪽에 둔다 */
 @media (orientation: landscape) and (max-height: 560px) {
-  .dont-stage { width: min((100dvh - 16px - var(--safe-t, 0px) - var(--safe-b, 0px)) * 0.7004, 100vw - 2 * 232px, 720px); }
+  .dont-stage { width: min((100dvh - 16px - var(--safe-t, 0px) - var(--safe-b, 0px)) * var(--pv-ar), 100vw - 2 * 232px, 720px); }
   .dont-end {
     left: auto; right: calc(16px + var(--safe-r, 0px)); top: 50%; bottom: auto; transform: translateY(-50%);
     width: 210px; margin: 0; padding: 0; gap: 8px;
@@ -96,14 +99,14 @@
   .dont-end .btn.big { min-height: 50px; }
   /* 좁은 칸(210px)에서 긴 단추 글이 칸을 밀어내지 않게 접는다(팀 사이트 단추) */
   .dont-end { grid-template-columns: minmax(0, 1fr); }
-  #dont-site { white-space: normal; text-align: center; line-height: 1.25; padding: 8px 14px; }
+  #dont-site, #otrv-site { white-space: normal; text-align: center; line-height: 1.25; padding: 8px 14px; }
   .dont-hint, .dont-load { bottom: calc(12px + var(--safe-b, 0px)); }
 }
 /* 가로인데 아주 좁아 영상 옆에 자리가 없으면(작은 폰) 단추를 영상 위 아래쪽에 겹친다 */
 @media (orientation: landscape) and (max-height: 560px) and (max-width: 700px) {
-  .dont-stage { width: min((100dvh - 16px) * 0.7004, 100vw - 32px, 720px); }
+  .dont-stage { width: min((100dvh - 16px) * var(--pv-ar), 100vw - 32px, 720px); }
   .dont-end { left: 50%; right: auto; top: auto; bottom: calc(12px + var(--safe-b, 0px)); transform: translateX(-50%); width: min(420px, 100vw - 32px); grid-template-columns: 1fr 1fr; }
-  .dont-end-head, .dont-msg, .dont-site-note, #dont-site { grid-column: 1 / -1; }
+  .dont-end-head, .dont-msg, .dont-site-note, #dont-site, #otrv-site { grid-column: 1 / -1; }
   .dont-end-head img { width: 60%; }
 }
 
@@ -111,3 +114,21 @@
   .dont-bg, .dont-stage, .dont-stage video, .dont-black { transition: none; }
   .dont-end { animation: none; }
 }
+
+/* OFF THE RECORD 포스터 위 영상(2026-11-16): 포스터의 어두운 남색 바탕, 제목 RECORD의 붉은색, OFF THE의 흰색 */
+.otrv {
+  --dont-red: #9c3438;
+  --dont-ink: #eae2d7;
+  --dont-bg: #0e1016;
+  --dont-glow: rgb(40 52 78 / 0.5);
+  --pv-ar: 0.6956; /* 1113:1600 */
+}
+.otrv .dont-ghost { background: rgb(10 12 18 / 0.55); border-color: rgb(234 226 215 / 0.28); }
+.otrv .dont-end-line { color: rgb(234 226 215 / 0.72); }
+/* 끝날 때 검게 지우지 않고, 이쪽을 보는 마지막 장면을 남긴 채 조금만 어둡게(끝 화면 단추가 읽히게) */
+/* 포스터(제목 포함)가 그대로 남아 있으니 끝 화면 제목 그림은 빼고 단추만 둔다(겹치면 제목이 두 번 보이고 얼굴을 가린다) */
+.otrv .dont-end-head { display: none; }
+.otrv.is-ending .dont-stage video { opacity: 0.6; }
+.otrv.is-ending[data-mode="ar"] .dont-black { opacity: 0.35; }
+.otrv.is-ending[data-mode="pinned"] .dont-black,
+.otrv.is-ending[data-mode="screen"] .dont-black { opacity: 0.25; }
