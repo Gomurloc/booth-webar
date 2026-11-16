@@ -9,7 +9,7 @@
 // - dont        포스터 인식 → 카드 → 포스터 위 영상(재생 중) → 포스터를 놓침(가운데 보기) → 끝 → 다른 게임
 // - all6        ?targets=all6 로 사용금지 포스터 인식
 // - unmute      포스터 인식 → 카드 → UNMUTE 팀 테스트 주소로 가는지(2026-11-16부터). 그다음 우리 시안(unmute/)을 끝까지 → 결과 카드 PNG 저장, 공유 시트 경로도
-// - site        직접 고르기로 사용금지 영상 → 끝 화면의 팀 사이트 단추 → do-not-access.com/ar/로 가는지
+// - site        직접 고르기로 사용금지 영상 → 끝 화면의 팀 사이트 단추 → do-not-access.com/ar/?from=booth로 가는지
 // - site-cam    카메라로 사용금지 포스터 → 영상 끝 → 팀 사이트 → 뒤로 한 번이면 허브 첫 화면, 한 번 더면 허브를 떠나는지.
 //               그리고 팀 사이트가 늦게 뜰 때 뒤로 가기: "이동하는 중…"에 멈추지 않고 첫 화면으로 오는지
 //   (팀 사이트 둘은 시험에서 실제로 받지 않고 짧은 대역 페이지로 가로챈다)
@@ -338,7 +338,7 @@ const scenarios = {
     await shot(page, rec, 'unmute-1-card');
     await page.locator('#card-open').click();
     // 2026-11-16부터 카드는 UNMUTE 팀 테스트로 간다
-    await page.waitForURL(/^https:\/\/unmute-mp3\.github\.io\/unmute-test\/$/, { timeout: 10_000 });
+    await page.waitForURL(/^https:\/\/unmute-mp3\.github\.io\/unmute-test\/\?from=booth$/, { timeout: 10_000 });
     rec.teamUrl = page.url();
     // 우리 시안(unmute/)은 허브에서 열지 않지만 저장소에 남아 있어 그대로 시험한다
     await page.goto(BASE + '/unmute/');
@@ -479,7 +479,7 @@ const scenarios = {
     rec.otrOk = true;
     await page.goto(BASE + '/');
     await page.locator('.game-row[data-game="unmute"]').click();
-    await page.waitForURL(/^https:\/\/unmute-mp3\.github\.io\/unmute-test\/$/); // UNMUTE 팀 테스트(2026-11-16부터)
+    await page.waitForURL(/^https:\/\/unmute-mp3\.github\.io\/unmute-test\/\?from=booth$/); // UNMUTE 팀 테스트(2026-11-16부터)
     rec.unmuteOk = true;
     await context.close();
   },
@@ -502,7 +502,7 @@ const scenarios = {
     });
     await shot(page, rec, 'site-1-dont-end');
     await page.locator('#dont-site').click();
-    await page.waitForURL(/^https:\/\/do-not-access\.com\/ar\/$/, { timeout: 10_000 });
+    await page.waitForURL(/^https:\/\/do-not-access\.com\/ar\/\?from=booth$/, { timeout: 10_000 });
     rec.siteUrl = page.url();
     await context.close();
     if (!rec.siteLink.visible) throw new Error('팀 사이트 단추가 안 보임');
@@ -522,7 +522,7 @@ const scenarios = {
     await page.waitForSelector('#dont-end:not([hidden])', { timeout: 20_000 });
     await sleep(400);
     await page.locator('#dont-site').click();
-    await page.waitForURL(/^https:\/\/do-not-access\.com\/ar\/$/, { timeout: 10_000 });
+    await page.waitForURL(/^https:\/\/do-not-access\.com\/ar\/\?from=booth$/, { timeout: 10_000 });
     // 돌아오기: 한 번이면 허브 첫 화면, 한 번 더면 허브를 떠난다(기록이 두 칸 쌓였던 것을 한 칸으로 줄이고 갔는지)
     await page.goBack();
     await page.waitForFunction(() => window.__hub?.state === 'landing', null, { timeout: 20_000 });

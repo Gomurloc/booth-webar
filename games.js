@@ -26,7 +26,8 @@ export const GAMES = {
     open: '사용금지 열기',
     thumb: 'img/dont.jpg',
     // 사용금지 팀 사이트(2026-11-16 받음): 밤 10시 이후의 학교를 3D로 걸어 다니는 페이지. 포스터 영상이 끝나면 간다
-    site: 'https://do-not-access.com/ar/',
+    // ?from=booth: 팀 사이트가 이 값을 보고 부스에서 온 사람에게만 "← 부스로" 단추를 띄운다(2026-11-16 두 팀에 요청)
+    site: 'https://do-not-access.com/ar/?from=booth',
     siteLabel: '10시 이후의 학교 들어가기',
   },
   unmute: {
@@ -37,7 +38,7 @@ export const GAMES = {
     open: '테스트 하러 가기',
     thumb: 'img/unmute.jpg',
     // UNMUTE 팀이 만든 컬러 테스트(2026-11-16 받음). 우리 시안(unmute/)은 남겨 두지만 허브에서는 열지 않는다
-    href: 'https://unmute-mp3.github.io/unmute-test/',
+    href: 'https://unmute-mp3.github.io/unmute-test/?from=booth', // ?from=booth는 위 사용금지와 같다
   },
 };
 
