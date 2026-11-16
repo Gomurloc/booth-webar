@@ -1,5 +1,5 @@
 // 허브 진입점. 상태: landing(첫 화면) → starting(카메라·인식 준비) → scanning(포스터 찾는 중) → card(찾은 게임 카드)
-//   → dont(허브 안에서 사용금지 영상) · otrv(OFF THE RECORD 포스터 위 영상, 끝나면 사진 앱으로)
+//   → dont(허브 안에서 사용금지 영상) · otrv(OFF THE RECORD 포스터 위 영상)
 //   또는 leaving(카메라를 놓고 otr/·팀 사이트로 이동).
 // 직접 고르기 단추는 어느 상태에서나 바로 그 게임으로 간다(인식이 안 돼도 쓸 수 있게).
 // 주소 옵션: ?targets=all6 이면 포스터 여섯 장 모두 인식(기본은 메인 셋).
@@ -74,9 +74,9 @@ const hub = {
 const nav = { depth: 0, skip: 0, afterSkip: null };
 
 const dont = new PosterVideo({ game: 'dont', onExit: () => afterContent(), onSite: (href) => leave(href) }); // 끝 화면 팀 사이트 단추: 카메라를 놓고 간다
-// OFF THE RECORD 포스터 위 영상(2026-11-16). 끝 화면 "사진 찍으러 가기"는 사진 앱 포스터 AR로(iOS 자이로 허락을 그 탭 안에서 묻는다)
+// OFF THE RECORD 포스터 위 영상(2026-11-16). 끝 화면은 다시 보기·다른 게임만(사진 앱은 부스에 QR을 따로 둔다)
 // 영상은 잔잔하게 움직이다 처음으로 돌아오는 반복 영상이라, 끝 화면 뒤에서도 소리 없이 계속 반복한다(loopEnd)
-const otrv = new PosterVideo({ game: 'otr', prefix: 'otrv', endBright: 0.75, loopEnd: true, onExit: () => afterContent(), onSite: () => openArGame('otr') });
+const otrv = new PosterVideo({ game: 'otr', prefix: 'otrv', endBright: 0.75, loopEnd: true, onExit: () => afterContent() });
 // 허브 안에서 여는 포스터 영상: 상태 이름 → 재생기, 게임 → 상태 이름
 const VIDEO = { dont, otrv };
 const VIDEO_STATE = { dont: 'dont', otr: 'otrv' };

@@ -5,7 +5,7 @@
 // - landing     첫 화면, 가로 넘침 없음
 // - nojs        스크립트가 꺼져도 첫 화면에 세 게임 링크가 있는지
 // - inapp       카카오톡 안 브라우저(UA)면 바깥 브라우저로 여는 안내가 뜨는지
-// - otr         포스터 인식 → 카드 → 포스터 위 영상(2026-11-16) → 끝 화면 "사진 찍으러 가기" → 사진 앱 포스터 AR(otr/?ar=1)
+// - otr         포스터 인식 → 카드 → 포스터 위 영상(2026-11-16) → 끝 화면(사진 앱 단추 없음, 뒤에서 반복) → 다른 게임 → 카메라 화면
 //               (허브가 카메라를 놓았는지, 사진 앱이 카메라를 켰는지) → "다른 게임"으로 허브
 // - dont        포스터 인식 → 카드 → 포스터 위 영상(재생 중) → 포스터를 놓침(가운데 보기) → 끝 → 다른 게임
 // - all6        ?targets=all6 로 사용금지 포스터 인식
@@ -237,7 +237,7 @@ const scenarios = {
     await sleep(400);
     await shot(page, rec, 'otr-2-card');
     rec.card = await page.evaluate(() => ({ what: document.getElementById('card-what').textContent, open: document.getElementById('card-open').textContent }));
-    // 2026-11-16부터 메인 포스터 카드는 포스터 위 영상부터 튼다(잔잔하게 움직이는 반복 영상) → 끝 화면 "사진 찍으러 가기"
+    // 2026-11-16부터 메인 포스터 카드는 포스터 위 영상부터 튼다(잔잔하게 움직이는 반복 영상). 끝 화면에 사진 앱 단추는 없다(QR을 따로 둔다)
     await page.locator('#card-open').click();
     await page.waitForFunction(
       () => {
@@ -261,25 +261,14 @@ const scenarios = {
     // 끝 화면 뒤에서 영상이 소리 없이 계속 반복하는지(loopEnd)
     if (!rec.atEnd.loop || rec.atEnd.paused || !rec.atEnd.muted) throw new Error('끝 화면 뒤 반복이 아님: ' + JSON.stringify(rec.atEnd));
     await shot(page, rec, 'otr-2c-end');
-    rec.hubTracksBefore = await hub(page, () => window.__hub.cameraTracks());
-    await page.locator('#otrv-site').click();
-    await page.waitForURL(/\/otr\/\?ar=1$/, { timeout: 10_000 }); // 끝 화면에서 사진 앱 포스터 AR
-    await page.waitForFunction(() => window.__booth?.ready === true, null, { timeout: 60_000 });
-    // 허브가 카메라를 놓은 뒤에 사진 앱이 카메라를 열었는지
-    rec.hubReleasedFirst = hubReleasedFirst(await readCamLog(page), '/otr/');
-    if (!rec.hubReleasedFirst.ok) throw new Error('허브가 카메라를 놓기 전에 사진 앱이 열었다: ' + JSON.stringify(rec.hubReleasedFirst));
-    await sleep(2500);
-    rec.otrCamera = await page.evaluate(() => {
-      const v = document.getElementById('카메라');
-      return { readyState: v.readyState, w: v.videoWidth, h: v.videoHeight, live: v.srcObject?.getVideoTracks?.()[0]?.readyState };
-    });
-    rec.otrState = await page.evaluate(() => document.body.dataset.state);
-    rec.otrLinkVisible = await page.locator('#허브로').isVisible();
-    await shot(page, rec, 'otr-3-photo-app');
-    await page.locator('#허브로').click();
-    await page.waitForURL(BASE + '/', { timeout: 10_000 });
-    await page.waitForFunction(() => window.__hub?.state === 'landing');
-    await shot(page, rec, 'otr-4-back-to-hub');
+    // 끝 화면 단추: 다시 보기 · 다른 게임만(2026-11-16 사진 앱 단추를 뺐다)
+    rec.endButtons = await page.evaluate(() => [...document.querySelectorAll('#otrv-end .btn')].filter((b) => !b.hidden && b.offsetParent).map((b) => b.textContent.trim()));
+    if (rec.endButtons.join('|') !== '다시 보기|다른 게임') throw new Error('끝 화면 단추가 다름: ' + rec.endButtons.join('|'));
+    if (rec.atEnd.focused !== 'otrv-replay') throw new Error('끝 화면 첫 초점이 다시 보기가 아님: ' + rec.atEnd.focused);
+    await page.locator('#otrv-other').click();
+    await waitState(page, 'scanning', 10_000);
+    rec.afterOther = { state: await hub(page, () => window.__hub.state), otrvOpen: await hub(page, () => window.__hub.otrv().open), tracks: await hub(page, () => window.__hub.cameraTracks()) };
+    await shot(page, rec, 'otr-3-after-other');
     await context.close();
   },
 
@@ -708,7 +697,7 @@ const scenarios = {
     await page.goBack();
     await waitState(page, 'landing', 10_000);
     rec.step3b = { url: page.url(), state: await hub(page, () => window.__hub.state) };
-    // ④ 카메라 → 카드 → 포스터 위 영상(기록 두 칸) → 끝 화면 "사진 찍으러 가기" → 사진 앱 → 뒤로 → 허브 첫 화면(한 번에)
+    // ④ 카메라 → 카드 → 포스터 위 영상(기록 두 칸) → 끝 화면 → 뒤로 → 카메라 화면 → 뒤로 → 허브 첫 화면
     await page.locator('#start').click();
     await waitCard(page, 'otr');
     await page.locator('#card-open').click();
@@ -719,12 +708,12 @@ const scenarios = {
       v.currentTime = Math.max(0, v.duration - 0.3);
     });
     await page.waitForSelector('#otrv-end:not([hidden])', { timeout: 20_000 });
-    await page.locator('#otrv-site').click();
-    await page.waitForURL(/\/otr\/\?ar=1$/, { timeout: 10_000 });
-    await page.waitForFunction(() => window.__booth?.ready === true, null, { timeout: 60_000 });
     await page.goBack();
-    await page.waitForURL(BASE + '/', { timeout: 10_000 });
-    await page.waitForFunction(() => window.__hub?.state === 'landing');
+    await waitState(page, ['scanning', 'card'], 10_000);
+    rec.step4a = { state: await hub(page, () => window.__hub.state), otrvOpen: await hub(page, () => window.__hub.otrv().open) };
+    if (rec.step4a.otrvOpen) throw new Error('뒤로 가기로 영상이 닫히지 않음');
+    await page.goBack();
+    await waitState(page, 'landing', 10_000);
     rec.step4 = { url: page.url(), state: await hub(page, () => window.__hub.state), depth: await hub(page, () => window.__hub.depth), historyLength: await page.evaluate(() => history.length) };
     await shot(page, rec, 'back-4-from-otr');
     await context.close();

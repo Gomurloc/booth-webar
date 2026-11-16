@@ -99,14 +99,14 @@
   .dont-end .btn.big { min-height: 50px; }
   /* 좁은 칸(210px)에서 긴 단추 글이 칸을 밀어내지 않게 접는다(팀 사이트 단추) */
   .dont-end { grid-template-columns: minmax(0, 1fr); }
-  #dont-site, #otrv-site { white-space: normal; text-align: center; line-height: 1.25; padding: 8px 14px; }
+  #dont-site { white-space: normal; text-align: center; line-height: 1.25; padding: 8px 14px; }
   .dont-hint, .dont-load { bottom: calc(12px + var(--safe-b, 0px)); }
 }
 /* 가로인데 아주 좁아 영상 옆에 자리가 없으면(작은 폰) 단추를 영상 위 아래쪽에 겹친다 */
 @media (orientation: landscape) and (max-height: 560px) and (max-width: 700px) {
   .dont-stage { width: min((100dvh - 16px) * var(--pv-ar), 100vw - 32px, 720px); }
   .dont-end { left: 50%; right: auto; top: auto; bottom: calc(12px + var(--safe-b, 0px)); transform: translateX(-50%); width: min(420px, 100vw - 32px); grid-template-columns: 1fr 1fr; }
-  .dont-end-head, .dont-msg, .dont-site-note, #dont-site, #otrv-site { grid-column: 1 / -1; }
+  .dont-end-head, .dont-msg, .dont-site-note, #dont-site { grid-column: 1 / -1; }
   .dont-end-head img { width: 60%; }
 }
 
