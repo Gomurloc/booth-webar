@@ -9,7 +9,7 @@
 //               (허브가 카메라를 놓았는지, 사진 앱이 카메라를 켰는지) → "다른 게임"으로 허브
 // - dont        포스터 인식 → 카드 → 포스터 위 영상(재생 중) → 포스터를 놓침(가운데 보기) → 끝 → 다른 게임
 // - all6        ?targets=all6 로 사용금지 포스터 인식
-// - unmute      포스터 인식 → 카드 → UNMUTE 팀 테스트 주소로 가는지(2026-11-16부터). 그다음 우리 시안(unmute/)을 끝까지 → 결과 카드 PNG 저장, 공유 시트 경로도
+// - unmute      포스터 인식 → 카드 → 포스터 애니메이션(2026-11-16) → 끝 화면(뒤에서 반복) → 테스트 하러 가기 → UNMUTE 팀 테스트 주소. 그다음 우리 시안(unmute/)을 끝까지 → 결과 카드 PNG 저장, 공유 시트 경로도
 // - site        직접 고르기로 사용금지 영상 → 끝 화면의 팀 사이트 단추 → do-not-access.com/ar/?from=booth로 가는지
 // - site-cam    카메라로 사용금지 포스터 → 영상 끝 → 팀 사이트 → 뒤로 한 번이면 허브 첫 화면, 한 번 더면 허브를 떠나는지.
 //               그리고 팀 사이트가 늦게 뜰 때 뒤로 가기: "이동하는 중…"에 멈추지 않고 첫 화면으로 오는지
@@ -351,8 +351,36 @@ const scenarios = {
     rec.cardMs = await waitCard(page, 'unmute');
     await sleep(300);
     await shot(page, rec, 'unmute-1-card');
+    rec.card = await page.evaluate(() => ({ what: document.getElementById('card-what').textContent, open: document.getElementById('card-open').textContent }));
+    // 2026-11-16부터 메인 포스터 카드는 포스터 애니메이션부터 튼다 → 끝 화면 "테스트 하러 가기" → UNMUTE 팀 테스트
     await page.locator('#card-open').click();
-    // 2026-11-16부터 카드는 UNMUTE 팀 테스트로 간다
+    await page.waitForFunction(
+      () => {
+        const d = window.__hub.umv();
+        return window.__hub.state === 'umv' && d.mode === 'ar' && d.opacity > 0.98 && d.time > 1.2;
+      },
+      null,
+      { timeout: 20_000 },
+    );
+    rec.afterOpen = await hub(page, () => window.__hub.umv());
+    // 흑백이 다 덮인 때(약 3.2초)와 글리치(약 7초)를 포스터 위에서 찍는다
+    for (const [t, name] of [[3.2, 'unmute-1b-gray'], [4.3, 'unmute-1c-wave'], [7.05, 'unmute-1d-glitch']]) {
+      await page.evaluate((t) => { document.getElementById('umv-video').currentTime = t; }, t);
+      await sleep(300);
+      await shot(page, rec, name);
+    }
+    await page.evaluate(() => {
+      const v = document.getElementById('umv-video');
+      v.currentTime = Math.max(0, v.duration - 0.5);
+    });
+    await page.waitForSelector('#umv-end:not([hidden])', { timeout: 20_000 });
+    await sleep(500);
+    rec.atEnd = await hub(page, () => ({ ...window.__hub.umv(), focused: document.activeElement?.id }));
+    if (!rec.atEnd.loop || rec.atEnd.paused || !rec.atEnd.muted) throw new Error('끝 화면 뒤 반복이 아님: ' + JSON.stringify(rec.atEnd));
+    rec.endButtons = await page.evaluate(() => [...document.querySelectorAll('#umv-end .btn')].filter((b) => !b.hidden && b.offsetParent).map((b) => b.textContent.trim()));
+    if (rec.endButtons.join('|') !== '테스트 하러 가기|다시 보기|다른 게임') throw new Error('끝 화면 단추가 다름: ' + rec.endButtons.join('|'));
+    await shot(page, rec, 'unmute-1e-end');
+    await page.locator('#umv-site').click();
     await page.waitForURL(/^https:\/\/unmute-mp3\.github\.io\/unmute-test\/\?from=booth$/, { timeout: 10_000 });
     rec.teamUrl = page.url();
     // 우리 시안(unmute/)은 허브에서 열지 않지만 저장소에 남아 있어 그대로 시험한다

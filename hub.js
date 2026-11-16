@@ -1,5 +1,5 @@
 // 허브 진입점. 상태: landing(첫 화면) → starting(카메라·인식 준비) → scanning(포스터 찾는 중) → card(찾은 게임 카드)
-//   → dont(허브 안에서 사용금지 영상) · otrv(OFF THE RECORD 포스터 위 영상)
+//   → dont(허브 안에서 사용금지 영상) · otrv(OFF THE RECORD 포스터 위 영상) · umv(UNMUTE 포스터 애니메이션, 끝나면 팀 테스트로)
 //   또는 leaving(카메라를 놓고 otr/·팀 사이트로 이동).
 // 직접 고르기 단추는 어느 상태에서나 바로 그 게임으로 간다(인식이 안 돼도 쓸 수 있게).
 // 주소 옵션: ?targets=all6 이면 포스터 여섯 장 모두 인식(기본은 메인 셋).
@@ -77,9 +77,12 @@ const dont = new PosterVideo({ game: 'dont', onExit: () => afterContent(), onSit
 // OFF THE RECORD 포스터 위 영상(2026-11-16). 끝 화면은 다시 보기·다른 게임만(사진 앱은 부스에 QR을 따로 둔다)
 // 영상은 잔잔하게 움직이다 처음으로 돌아오는 반복 영상이라, 끝 화면 뒤에서도 소리 없이 계속 반복한다(loopEnd)
 const otrv = new PosterVideo({ game: 'otr', prefix: 'otrv', endBright: 0.75, loopEnd: true, onExit: () => afterContent() });
+// UNMUTE 포스터 애니메이션(2026-11-16, UNMUTE 팀 연출안). 포스터에서 시작해 포스터로 돌아오는 반복이라 끝 화면 뒤에서도 소리 없이 반복한다.
+// 끝 화면 "테스트 하러 가기"는 사용금지 팀 사이트 단추와 같은 길(카메라를 놓고 간다)
+const umv = new PosterVideo({ game: 'unmute', prefix: 'umv', endBright: 0.75, loopEnd: true, onExit: () => afterContent(), onSite: (href) => leave(href) });
 // 허브 안에서 여는 포스터 영상: 상태 이름 → 재생기, 게임 → 상태 이름
-const VIDEO = { dont, otrv };
-const VIDEO_STATE = { dont: 'dont', otr: 'otrv' };
+const VIDEO = { dont, otrv, umv };
+const VIDEO_STATE = { dont: 'dont', otr: 'otrv', unmute: 'umv' };
 const video = () => VIDEO[hub.state] ?? null; // 지금 상태가 영상이면 그 재생기
 const openVideo = () => Object.values(VIDEO).find((p) => p.isOpen) ?? null;
 
@@ -100,6 +103,7 @@ window.__hub = {
   events: hub.events,
   dont: () => dont.debug(),
   otrv: () => otrv.debug(),
+  umv: () => umv.debug(),
   arRunning: () => !!hub.ar?.running,
   cameraTracks: () => hub.ar?.stream?.getTracks().filter((t) => t.readyState === 'live').length ?? 0,
   arSize: () => {
@@ -377,7 +381,7 @@ function onLost(i, info) {
 // ── 카드 ──────────────────────────────────────
 function showCard(gameId, index) {
   const g = GAMES[gameId];
-  // 포스터 위 영상을 틀 수 있는 포스터(겹칠 자리가 있는 OFF THE RECORD 메인 포스터)면 카드 글을 영상 쪽으로
+  // 포스터 위 영상을 틀 수 있는 포스터(겹칠 자리가 있는 OFF THE RECORD·UNMUTE 메인 포스터)면 카드 글을 영상 쪽으로
   const live = g.live && SET.targets[index]?.overlay ? g.live : null;
   const same = hub.card?.game === gameId && hub.card?.live === !!live;
   hub.card = { game: gameId, index, at: performance.now(), live: !!live };
@@ -390,7 +394,7 @@ function showCard(gameId, index) {
   el.sheet.dataset.view = 'card';
   setState('card');
   if (gameId === 'dont') dont.preload();
-  else if (live) otrv.preload();
+  else if (live) VIDEO[VIDEO_STATE[gameId]]?.preload();
   el.cardOpen.focus({ preventScroll: true });
   log('card', { game: gameId, index });
 }
@@ -403,7 +407,7 @@ function hideCard() {
 el.cardOpen.addEventListener('click', () => {
   if (!hub.card) return;
   const g = GAMES[hub.card.game];
-  if (hub.card.live) return openGame(hub.card.game, { live: true }); // 포스터 위 영상부터(끝 화면에서 사진 앱으로)
+  if (hub.card.live) return openGame(hub.card.game, { live: true }); // 포스터 위 영상부터
   if (!g?.arHref) return openGame(hub.card.game);
   openArGame(hub.card.game, el.cardOpen);
 });
@@ -442,7 +446,7 @@ el.cardDismiss.addEventListener('click', () => {
 
 // ── 게임 열기 ─────────────────────────────────
 // ar: 사진 앱을 포스터 AR로 연다(포스터 카드, 그리고 2026-11-14부터 직접 고르기도. openArGame)
-// live: 허브 안에서 포스터 위 영상을 튼다(OFF THE RECORD 메인 포스터 카드). 사용금지는 늘 영상
+// live: 허브 안에서 포스터 위 영상을 튼다(OFF THE RECORD·UNMUTE 메인 포스터 카드). 사용금지는 늘 영상
 function openGame(id, { ar = false, live = false } = {}) {
   const g = GAMES[id];
   if (!g || hub.state === 'leaving') return;

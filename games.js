@@ -42,6 +42,12 @@ export const GAMES = {
     thumb: 'img/unmute.jpg',
     // UNMUTE 팀이 만든 컬러 테스트(2026-11-16 받음). 우리 시안(unmute/)은 남겨 두지만 허브에서는 열지 않는다
     href: 'https://unmute-mp3.github.io/unmute-test/?from=booth', // ?from=booth는 위 사용금지와 같다
+    // 포스터 애니메이션(2026-11-16, UNMUTE 팀 연출안): 메인 포스터를 알아본 카드는 이 영상부터 튼다.
+    // 배경이 바깥부터 흑백 → 캐릭터에서 컬러 파동 → 글리치 → 처음으로(반복). 끝 화면 site 단추로 팀 테스트에 간다.
+    // 직접 고르기와 두 번째 포스터(all6의 MP3_Second)는 지금처럼 팀 테스트로 바로 간다
+    live: { what: '포스터가 움직여요', open: '포스터 움직이기' },
+    site: 'https://unmute-mp3.github.io/unmute-test/?from=booth',
+    siteLabel: '테스트 하러 가기',
   },
 };
 
@@ -54,6 +60,8 @@ export const GAME_ORDER = ['otr', 'dont', 'unmute'];
 export const DONT_OVERLAY = { x0: 0, y0: 0, x1: 1, y1: 1 };
 // OFF THE RECORD 메인 포스터 위 영상(2026-11-16): 포스터 전체를 덮는다. 영상 크기 = 포스터 비율(1113:1600)
 export const OTR_OVERLAY = { x0: 0, y0: 0, x1: 1, y1: 1 };
+// UNMUTE 메인 포스터 애니메이션(2026-11-16): 포스터 전체를 덮는다. 영상 크기 = 포스터 비율(2782:4000)
+export const UNMUTE_OVERLAY = { x0: 0, y0: 0, x1: 1, y1: 1 };
 
 // 인식 대상 묶음. MindAR는 앞 번호부터 맞춰 보고 처음 맞는 하나만 따라간다.
 // 기본은 메인 포스터 셋(게임끼리 헷갈림 0, 측정). ?targets=all6 이면 여섯 장 모두(같은 게임 두 장은 같은 콘텐츠)
@@ -63,7 +71,7 @@ export const TARGET_SETS = {
     targets: [
       { game: 'otr', poster: '3U_Main', overlay: OTR_OVERLAY },
       { game: 'dont', poster: 'Dont_Main', overlay: DONT_OVERLAY },
-      { game: 'unmute', poster: 'MP3_Main' },
+      { game: 'unmute', poster: 'MP3_Main', overlay: UNMUTE_OVERLAY },
     ],
   },
   all6: {
@@ -74,7 +82,7 @@ export const TARGET_SETS = {
       { game: 'dont', poster: 'Dont_Main', overlay: DONT_OVERLAY },
       // 두 번째 포스터는 그림 배치가 달라 영상을 겹치지 않고 화면 가운데에 띄운다
       { game: 'dont', poster: 'Dont_Second' },
-      { game: 'unmute', poster: 'MP3_Main' },
+      { game: 'unmute', poster: 'MP3_Main', overlay: UNMUTE_OVERLAY },
       { game: 'unmute', poster: 'MP3_Second' },
     ],
   },
