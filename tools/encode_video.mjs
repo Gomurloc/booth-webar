@@ -4,7 +4,8 @@
 // 비트레이트: 붐비는 행사장 회선(1.5~2Mbps)에서도 끊기지 않게 영상 1600kbps(+소리 128k ≈ 1.75Mbps)를 기본으로 한다.
 //       15초면 약 3.3MB. 입자감 있는 그림이라 이보다 낮추면 뭉개진다(2026-11-13 1500·2000kbps 비교).
 //       --max-mb(기본 8)는 상한이다. 길이가 길어 한도를 넘으면 그만큼 낮춘다.
-// 쓰는 법: node tools/encode_video.mjs <원본.mp4> [결과.mp4] [--size 720] [--kbps 1600] [--max-mb 8]
+// 쓰는 법: node tools/encode_video.mjs <원본.mp4> [결과.mp4] [--size 720] [--kbps 1600] [--max-mb 8] [--gop 2]
+//          --gop: 키프레임 간격(초). 반복 영상은 길이만큼(예: 10) 주면 2초마다 압축 무늬가 바뀌며 가만있는 곳이 살짝 깜빡이는 것이 없다
 //          video/ 안에 쓰면 끝에 tools/stamp_media.mjs로 index.html의 영상 주소 판 번호(?v=)를 바꾼다
 //          결과를 빼면 video/dont.mp4(+ video/dont.jpg)에 쓴다(허브가 읽는 이름).
 // 필요: ffmpeg, ffprobe가 PATH에 있어야 한다.
@@ -19,12 +20,13 @@ const AUDIO_KBPS = 128;
 const MAX_FPS = 30; // 720x720에서 level 4.0 한도 안(60fps 원본도 30으로 줄인다)
 
 function parseArgs(argv) {
-  const a = { size: 720, w: 0, h: 0, maxMb: 8, kbps: 1600, files: [] };
+  const a = { size: 720, w: 0, h: 0, maxMb: 8, kbps: 1600, gop: 2, files: [] };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--size') a.size = Number(argv[++i]);
     else if (k === '--wh') [a.w, a.h] = argv[++i].split('x').map(Number); // 정사각형이 아닌 크기(예: 포스터 전체 720x1028)
     else if (k === '--max-mb') a.maxMb = Number(argv[++i]);
+    else if (k === '--gop') a.gop = Number(argv[++i]);
     else if (k === '--kbps' || k === '--cap-kbps') a.kbps = Number(argv[++i]);
     else a.files.push(k);
   }
@@ -66,7 +68,7 @@ function encode(a, src, videoKbps) {
   const vf = [`scale=${W}:${H}:force_original_aspect_ratio=increase:flags=lanczos:out_color_matrix=bt709:out_range=tv`, `crop=${W}:${H}`, 'setsar=1', fps ? `fps=${fps}` : null]
     .filter(Boolean)
     .join(',');
-  const gop = Math.round((fps || src.fps || 24) * 2); // 2초마다 키프레임(되감기·다시 보기가 빠르게)
+  const gop = Math.round((fps || src.fps || 24) * a.gop); // 기본 2초마다 키프레임(되감기·다시 보기가 빠르게)
   const common = [
     '-vf', vf,
     '-c:v', 'libx264', '-profile:v', 'main', '-level:v', '4.0', '-pix_fmt', 'yuv420p', '-preset', 'slow',
