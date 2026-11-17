@@ -1,12 +1,13 @@
-# OFF THE RECORD 포스터 영상(2026-11-16 셋째 판): 포스터 틀 그대로, 카메라 움직임 없이 한 명씩 조명
+# OFF THE RECORD 포스터 영상(2026-11-16 셋째 판, 2026-11-17 나머지는 흐리게): 포스터 틀 그대로, 카메라 움직임 없이 한 명씩 조명
 # 흐름(15초)
-# 1) 포스터 그대로 → 불이 꺼진다(배경은 아주 어둡게, 사람은 거의 검게)
-# 2) 소녀에게 불이 켜진다(나머지 둘은 검게). 헤드셋에서 소리 물결이 퍼진다
+# 1) 포스터 그대로 → 불이 꺼진다(모두 어둡고 흐려진다. 초점이 나간 것처럼)
+# 2) 소녀에게 불이 켜지고 초점이 맞는다(나머지 둘은 어둡고 흐린 채로 자리에 남는다). 헤드셋에서 소리 물결이 퍼진다
 # 3) 가면 쓴 남자에게. 가면 쇠붙이에 빛이 지나가고, 옷깃의 청록 줄이 네온처럼 위에서 아래로 흐르고, 눈이 한 번 반짝
 # 4) 소년에게. 안은 금빛 레코드가 빛나 얼굴·손을 아래에서 비추고, 레코드 위로 빛이 돌고, 금빛 가루가 올라간다
 # 5) 셋에게 차례로 다시 불이 켜지고 배경이 돌아온다 → 제목 OFF THE 켜짐 → RECORD 쾅, 별 번쩍 → 포스터 그대로(반복 이음매)
 # 사람이 움직이는 바탕(머리카락·헤드셋 줄·행성·정거장 불빛)은 이전 판 잔잔한 반복 영상을 쓴다(없으면 포스터 그림 그대로)
-# 연출 방향(카메라 없이 한 명씩, 나머지는 검게)은 사용자 지시, 순서·시간·효과·소리는 이쪽에서 정했다. 화면 글자는 포스터에 있는 것만
+# 연출 방향(카메라 없이 한 명씩)은 사용자 지시, 나머지를 흐리게 두는 것은 2026-11-17 사용자 선택(검게 지움 · 그늘 · 흑백 · 흐리게 중)
+# 순서·시간·효과·소리는 이쪽에서 정했다. 화면 글자는 포스터에 있는 것만
 # 입력: 포스터 원본(Poster_B2_3U_Main.png), 세 사람 가리개(tools/otr_people_mask.png: 파랑 = 가면 남자, 초록 = 소년, 빨강 = 소녀),
 #       바탕 영상(720x1036 24fps 10초, 처음·끝 = 포스터) 또는 '-'
 # 쓰는 법: python tools/make_otr_spotlight.py <Poster_B2_3U_Main.png> tools/otr_people_mask.png <calm_loop.mp4 또는 -> <out.mp4>
@@ -41,10 +42,14 @@ T_SLAM = 12.70                 # RECORD 쾅
 T_CLEAN = 14.35                # 이때부터 포스터 그대로(반복 이음매)
 BASE_AT = 1.0                  # 바탕 영상이 이 초에 시작(10초)
 
-# ── 밝기(포스터에 곱하는 값) ──
-DARK_BG = 0.17                 # 불 꺼진 배경
-DARK_CH = 0.04                 # 불 꺼진 사람(거의 검게)
-DARK_TITLE = 0.24             # 불 꺼진 제목(검은 구멍처럼 보이지 않게 배경보다 조금 밝게)
+# ── 꺼진 쪽(조명 안 받는 사람·배경·제목): 밝기(포스터에 곱하는 값), 채도, 흐림 ──
+DARK_BG = 0.24                 # 불 꺼진 배경
+DARK_CH = 0.42                 # 조명 안 받는 사람(어둡지만 보이게)
+DARK_TITLE = 0.30              # 불 꺼진 제목(흐리지는 않는다)
+SAT_BG = 0.6                   # 꺼진 배경·제목 채도(1 = 그대로, 0 = 흑백)
+SAT_CH = 0.55                  # 조명 안 받는 사람 채도
+DARK_TINT = (1.08, 1.0, 0.9)   # 꺼진 쪽을 살짝 푸르게(BGR에 곱함)
+BLUR = 7.0                     # 꺼진 쪽 흐림(가우스 시그마, 픽셀). 초점이 나간 것처럼
 
 # ── 자리(720x1036 기준) ──
 HEADSET = (455, 605)           # 소녀 헤드셋 귀덮개
@@ -155,6 +160,19 @@ def spot_level(k, t):
     lv = 1 - smooth((t - t1) / 0.18)
     tr = RELIGHT[k]
     return max(lv, flick_on(t - tr))
+
+
+def focus_level(k, t):
+    # 초점(흐림이 걷힌 정도): 불은 깜빡이며 켜지고, 초점은 그 뒤를 따라 부드럽게 맞는다
+    t0, t1 = SPOTS[k]
+    if t < t0:
+        return 0.0
+    if t < t1:
+        return smooth((t - t0) / 0.35)
+    if RELIGHT[k] - t1 < 1.0:
+        return 1.0  # 곧 다시 켜지는 사람(소년)은 초점을 놓지 않는다(레코드 빛이 남아 있어 흐린 몸 위에 또렷한 판만 뜨지 않게)
+    f = 1 - smooth((t - t1) / 0.25)
+    return max(f, smooth((t - RELIGHT[k]) / 0.3))
 
 
 def all_level(t):
@@ -292,6 +310,12 @@ def boy_fx(t, lv, glow):
     return out * lv
 
 
+# 꺼진 쪽 밝기·채도 지도(배경, 사람, 제목)
+DARK_D = ((1 - ALL) * DARK_BG + ALL * DARK_CH) * (1 - TITLE) + TITLE * DARK_TITLE
+SAT_D = ((1 - ALL) * SAT_BG + ALL * SAT_CH) * (1 - TITLE) + TITLE * SAT_BG
+TINT = np.float32(DARK_TINT)
+GRAY_W = np.float32([0.114, 0.587, 0.299])  # BGR 밝기
+
 frames = []
 for i in range(N):
     t = i / FPS
@@ -302,13 +326,21 @@ for i in range(N):
         continue
     A = all_level(t)
     L = {k: max(A, spot_level(k, t)) for k in M}
-    # 곱할 밝기: 배경, 사람마다, 제목
-    mult = (1 - ALL) * (DARK_BG + (1 - DARK_BG) * A)
+    Fo = {k: max(A, focus_level(k, t)) for k in M}
+    # 켜진 정도(밝기·채도)와 초점: 배경, 사람마다, 제목(제목은 흐리지 않는다)
+    lv = (1 - ALL) * A
+    fv = (1 - ALL) * A
     for k in M:
-        mult = mult + M[k] * (DARK_CH + (1 - DARK_CH) * L[k])
+        lv = lv + M[k] * L[k]
+        fv = fv + M[k] * Fo[k]
     tl = title_level(t) * (1 - RECORD_ROWS) + record_word(t) * RECORD_ROWS
-    mult = mult * (1 - TITLE) + TITLE * (DARK_TITLE + (1 - DARK_TITLE) * tl)
-    img = base * mult[..., None]
+    lv = lv * (1 - TITLE) + TITLE * tl
+    fv = (fv * (1 - TITLE) + TITLE)[..., None]
+    if fv.min() < 0.999:
+        base = base * fv + cv2.GaussianBlur(base, (0, 0), BLUR) * (1 - fv)
+    gray = (base @ GRAY_W)[..., None]
+    img = gray + (base - gray) * (SAT_D + (1 - SAT_D) * lv)[..., None]
+    img = img * (DARK_D + (1 - DARK_D) * lv)[..., None] * (TINT + (1 - TINT) * lv[..., None])
     # 불 꺼진 동안 어둠을 살짝 푸르게
     img += (1 - A) * (1 - ALL)[..., None] * np.array([6, 3, 0], np.float32)
     # 조명받는 사람: 뒤 빛 + 테두리 빛(한 명씩 켜진 때만. 다 같이 켜지면 없어진다)
