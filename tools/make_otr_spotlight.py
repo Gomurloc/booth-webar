@@ -8,6 +8,7 @@
 # 사람이 움직이는 바탕(머리카락·헤드셋 줄·행성·정거장 불빛)은 이전 판 잔잔한 반복 영상을 쓴다(없으면 포스터 그림 그대로)
 # 연출 방향(카메라 없이 한 명씩)은 사용자 지시, 나머지를 흐리게 두는 것은 2026-11-17 사용자 선택(검게 지움 · 그늘 · 흑백 · 흐리게 중)
 # 순서·시간·효과·소리는 이쪽에서 정했다. 화면 글자는 포스터에 있는 것만
+# 소리 = 인트로 브금(tools/make_otr_bgm.py, 이 대본이 불러 만든다) + 효과음. 브금을 웅장한 인트로풍으로 하자는 건 2026-11-17 사용자 제안, 편곡은 이쪽
 # 입력: 포스터 원본(Poster_B2_3U_Main.png), 세 사람 가리개(tools/otr_people_mask.png: 파랑 = 가면 남자, 초록 = 소년, 빨강 = 소녀),
 #       바탕 영상(720x1036 24fps 10초, 처음·끝 = 포스터) 또는 '-'
 # 쓰는 법: python tools/make_otr_spotlight.py <Poster_B2_3U_Main.png> tools/otr_people_mask.png <calm_loop.mp4 또는 -> <out.mp4>
@@ -371,8 +372,11 @@ for i in range(N):
     frames.append(np.clip(np.rint(img), 0, 255).astype(np.uint8))
 
 # ── 소리 ──
-# 불 꺼짐: 큰 스위치 쿵 + 낮은 웅웅거림 / 한 명씩: 스위치 철컥 + 사람마다 소리(소녀 = 무전 잡음과 삐, 가면 남자 = 쇠 울림과 기계음, 소년 = 판 잡음과 따뜻한 화음)
-# 끝: 철컥 셋 → 올라가는 소리 → OFF THE 쉭 → RECORD 쾅(낮은 금관) + 별 반짝 → 잦아듦
+# 효과음: 불 꺼짐 = 큰 스위치 쿵 / 한 명씩 = 스위치 철컥 + 사람마다 소리(소녀 = 무전 잡음과 삐, 가면 남자 = 쇠 울림과 기계음, 소년 = 판 잡음과 방울)
+# 끝 = 철컥 셋 → 올라가는 잡음 → OFF THE 쉭 → RECORD 쾅(낮은 금관) + 별 반짝 → 잦아듦
+# 화음·웅웅거림은 브금이 맡는다(효과음 쪽 화음은 브금과 음이 부딪혀 뺐다). 효과음은 브금보다 SFX_DB만큼 작게 섞는다
+BGM_DB = 0.0
+SFX_DB = -5.0
 SR = 48000
 ts_ = np.arange(int(N / FPS * SR)) / SR
 rng = np.random.default_rng(5)
@@ -432,15 +436,8 @@ def band(x, lo, hi):
 
 
 mix = np.zeros_like(ts_)
-# 처음: 포스터 밝을 때 옅은 화음 → 불 꺼짐에 뚝
-pad0 = sum(np.sin(2 * np.pi * f * ts_) for f in [220.0, 277.2, 329.6]) / 3
-mix += pad0 * (1 - smooth((ts_ - 0.8) / 0.12)) * smooth(ts_ / 0.3) * db(-26)
 place(kick(70, 30, 0.9, 2.0) * db(-6), T_DOWN[0], mix)
 place(clack(db(-8)), T_DOWN[0], mix)
-# 낮은 웅웅거림(어둠 내내, 다 켜지면 사라짐)
-drone = sum(saw(f * (1 + 0.003 * j), ts_) for j, f in enumerate([55.0, 82.4, 110.0])) / 3
-drone = lp(drone, 300)
-mix += drone * smooth((ts_ - 0.9) / 1.0) * (1 - smooth((ts_ - T_SLAM) / 0.1)) * db(-17)
 # 한 명씩 켜질 때 철컥
 for k, (t0, t1) in SPOTS.items():
     place(clack(db(-5)), t0, mix)
@@ -464,25 +461,20 @@ for st in [0.35, 1.25, 2.05]:
     whirr = np.sin(2 * np.pi * np.cumsum(140 + 260 * tt / 0.75) / SR) * np.sin(np.pi * tt / 0.75) ** 2
     place((whirr * 0.6 + band(rng.standard_normal(n), 400, 2400) * np.sin(np.pi * tt / 0.75) ** 2 * 0.5) * db(-24), m0 + st, mix)
 place(tone(3136, 0.6, 0.002, 0.18) * db(-28), m0 + 2.15, mix)
-# 소년: 판 잡음(톡톡) + 따뜻한 화음이 부풀었다 남음 + 가루 방울 소리
+# 소년: 판 잡음(톡톡) + 가루 방울 소리(브금 C 마디 음: E G A C)
 b0, b1 = SPOTS['boy']
 crk = np.zeros_like(ts_)
 pops = rng.uniform(b0, RELIGHT['boy'] + 1.0, 160)
 for tp in pops:
     place(band(rng.standard_normal(int(0.004 * SR)), 1500, 6000) * rng.uniform(0.3, 1.0), tp, crk)
 mix += crk * db(-24)
-warm = sum(np.sin(2 * np.pi * f * ts_) + 0.3 * np.sin(4 * np.pi * f * ts_) for f in [146.8, 220.0, 293.7, 370.0]) / 4
-wk = smooth((ts_ - b0 - 0.2) / 1.6) * (1 - smooth((ts_ - T_SLAM) / 0.15))
-mix += warm * wk * db(-22)
 for k_ in range(9):
-    place(tone([1175, 1480, 1760, 2217][k_ % 4], 0.5, 0.002, 0.25) * db(-31), b0 + 0.5 + k_ * 0.27, mix)
-# 끝: 철컥 셋 + 올라가는 소리 + OFF THE 쉭 + RECORD 쾅
+    place(tone([1319, 1568, 1760, 2093][k_ % 4], 0.5, 0.002, 0.25) * db(-31), b0 + 0.5 + k_ * 0.27, mix)
+# 끝: 철컥 셋 + 올라가는 잡음 + OFF THE 쉭 + RECORD 쾅
 for k, tr in RELIGHT.items():
     place(clack(db(-6)), tr, mix)
 rk = np.clip((ts_ - 11.2) / (T_SLAM - 11.2), 0, 1) * (ts_ < T_SLAM)
 mix += lp_var(noise, 400 + 7000 * rk ** 2) * rk ** 2.2 * db(-15)
-ph = 2 * np.pi * np.cumsum(220 + 700 * rk ** 2) / SR
-mix += np.sin(ph) * rk ** 2 * db(-24)
 n = int(0.35 * SR)
 tt = np.arange(n) / SR
 place(band(rng.standard_normal(n), 800, 6000) * np.sin(np.pi * tt / 0.35) ** 2 * db(-16), T_TITLE - 0.1, mix)
@@ -499,8 +491,38 @@ for f, lv in [(2637, -25), (3951, -29), (5274, -33)]:
 t2 = ts_ - (T_SLAM + 0.95)
 mix += np.sin(2 * np.pi * 3520 * ts_) * (t2 >= 0) * np.exp(-np.clip(t2, 0, None) / 0.35) * db(-31)
 mix *= np.clip((DUR - 0.3 - ts_) / 0.8, 0, 1)
-mix *= db(-1.5) / (np.abs(mix).max() + 1e-9)
-pcm = (np.clip(np.stack([mix, mix], 1), -1, 1) * 32767).astype(np.int16)
+# 브금을 만들어(48kHz 스테레오) 효과음과 섞는다
+bgm_npy = os.path.join(tempfile.mkdtemp(), 'otr_bgm.npy')
+subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'make_otr_bgm.py'), bgm_npy], check=True)
+bgm = np.load(bgm_npy).astype(np.float64)
+n_ = min(bgm.shape[1], len(mix))
+st = bgm[:, :n_] * db(BGM_DB) + np.stack([mix[:n_], mix[:n_]]) * db(SFX_DB) * 2.2
+
+
+def follow(x, att, rel):
+    # 올라갈 때 att초, 내려갈 때 rel초로 따라가는 봉투
+    a_att, a_rel = np.exp(-1 / (att * SR)), np.exp(-1 / (rel * SR))
+    out = np.empty_like(x)
+    e = 0.0
+    for i, v in enumerate(x):
+        a = a_att if v > e else a_rel
+        e = a * e + (1 - a) * v
+        out[i] = e
+    return out
+
+
+# 쾅만 혼자 크고 앞이 작지 않게: 누르고(-24dB 넘는 만큼 1/3로) 봉우리를 -1.5dB에서 자른다(4ms 미리 보기)
+st /= np.abs(st).max()
+a_ = np.exp(-1 / (0.03 * SR))
+lvl = np.sqrt(lfilter([1 - a_], [1, -a_], (st ** 2).mean(0)))
+gr = np.minimum(1, (np.maximum(lvl, 1e-9) / db(-24)) ** (1 / 3.0 - 1))
+st *= 1 - follow(1 - gr, 0.005, 0.18)
+need = np.minimum(1, db(-1.5) / np.maximum(np.abs(st).max(0), 1e-9))
+need = np.minimum.reduce([np.roll(need, -k_) for k_ in range(0, int(0.004 * SR), 8)])
+st *= 1 - follow(1 - need, 0.0005, 0.08)
+st *= db(-1.0) / np.abs(st).max()
+mix = st
+pcm = (np.clip(st.T, -1, 1) * 32767).astype(np.int16)
 tmpwav = os.path.join(tempfile.mkdtemp(), 'otr.wav')
 with wave.open(tmpwav, 'wb') as wf:
     wf.setnchannels(2)
