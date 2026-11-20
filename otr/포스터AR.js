@@ -23,6 +23,7 @@
 //   기준(잘 맞을 때 비율의 0.6배, 0.3~0.5)을 넘을 때만 자리를 고친다. 기준을 상대값으로 둔 것은 실제 인쇄물·조명에서
 //   비율이 렌더 그림(0.94~1.0)보다 낮게 나올 수 있어서다.
 import { videoToView } from './화면.js';
+import { cropSetFor, cropToPoster } from '../targets/crops.js';
 import {
   POSTER_WIDTH_M,
   apply4,
@@ -584,14 +585,16 @@ export class PosterAR {
     return onScreen ? Math.max(DETECT_NEAR_MS, 6 * this.perf.detectMainMs) : DETECT_FAR_MS;
   }
 
-  // 찾기 한 번(MindAR _detectAndMatch와 같되 찾을 칸을 고른다)
+  // 찾기 한 번(MindAR _detectAndMatch와 같되 찾을 칸을 고른다). 대상 파일에 포스터 조각(targets/crops.js)이 있으면
+  // 조각까지 맞춰 보고, 조각으로 찾으면 자세를 포스터 전체 기준으로 옮겨 원래 번호로 돌려준다(따라가기는 포스터 전체로)
   async detectAt(inputT, crop) {
     const ctrl = this.ctrl;
     const t0 = performance.now();
     const { featurePoints } = ctrl.cropDetector._detect(inputT, crop.x, crop.y);
     this.perf.detectMainMs = ema(this.perf.detectMainMs, Math.min(300, performance.now() - t0));
     this.lastCrop = crop;
-    return ctrl._workerMatch(featurePoints, this.dims.map((_, i) => i));
+    this.cropSet ??= cropSetFor(this.targetsUrl);
+    return cropToPoster(this.cropSet, await ctrl._workerMatch(featurePoints, this.dims.map((_, i) => i)));
   }
 
   // 찾는 동안 돌아가며 볼 칸: 가운데 9칸(MindAR detectMoving과 같은 자리) 두 번에 바깥 칸 한 번

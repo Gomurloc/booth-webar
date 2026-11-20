@@ -534,7 +534,7 @@ async function startAR() {
   if (!AR || app.ar || app.arOff) return;
   const ar = new PosterAR({
     video: el.video,
-    targetsUrl: new URL('../targets/targets_otr.mind', import.meta.url).href,
+    targetsUrl: new URL('../targets/targets_otr_crops.mind', import.meta.url).href, // 2026-11-20 포스터 조각을 더 넣은 판(targets/crops.js)
     vendorUrl: new URL('../vendor/mindar-three.js', import.meta.url).href,
     world: arWorld,
     front: () => app.facing === 'user',

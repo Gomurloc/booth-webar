@@ -10,6 +10,8 @@
 //   다른 스크립트(인앱 브라우저가 끼워 넣은 것 등)의 오류는 인식 실패로 보지 않는다.
 // - 카메라 권한 창이 떠 있는 동안은 시간 제한을 걸지 않는다(사람이 답할 시간).
 // - 끌 때는 처리 루프·카메라 트랙·렌더러·워커·텐서를 모두 놓는다(다음 페이지가 카메라를 바로 열 수 있게).
+import { cropSetFor, posterOf, cropToPoster } from './targets/crops.js';
+
 const VENDOR_URL = './vendor/mindar-three.js';
 const VENDOR_MARK = 'mindar-three'; // 오류가 인식 도구에서 났는지 가리는 표시(파일 이름)
 const AR_TIMEOUT_MS = 30_000; // 받기가 끝난 뒤 인식 준비(셰이더 컴파일 등)에 주는 시간
@@ -314,15 +316,17 @@ export class HubAR {
     });
   }
 
-  // 놓아준 대상은 잠깐 찾지 않게 한다(그사이 다른 포스터를 찾는다)
+  // 놓아준 대상은 잠깐 찾지 않게 한다(그사이 다른 포스터를 찾는다). 그 포스터의 조각도 같이 쉰다.
+  // 포스터 조각(targets/crops.js)으로 찾으면 자세를 포스터 전체 기준으로 옮겨 원래 번호로 넘긴다 — 따라가기 · 영상 · 카드는 원래 포스터 그대로
   _patchDetection(c) {
     if (!c?._detectAndMatch) return;
     const orig = c._detectAndMatch.bind(c);
-    c._detectAndMatch = (inputT, indexes) => {
+    const set = cropSetFor(this.targetsUrl);
+    c._detectAndMatch = async (inputT, indexes) => {
       const now = performance.now();
-      const list = indexes.filter((i) => !(this.excludeUntil[i] > now));
-      if (!list.length) return Promise.resolve({ targetIndex: -1, modelViewTransform: null });
-      return orig(inputT, list);
+      const list = indexes.filter((i) => !(this.excludeUntil[posterOf(set, i)] > now));
+      if (!list.length) return { targetIndex: -1, modelViewTransform: null };
+      return cropToPoster(set, await orig(inputT, list));
     };
   }
 

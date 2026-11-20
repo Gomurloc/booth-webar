@@ -67,7 +67,9 @@ export const UNMUTE_OVERLAY = { x0: 0, y0: 0, x1: 1, y1: 1 };
 // 기본은 메인 포스터 셋(게임끼리 헷갈림 0, 측정). ?targets=all6 이면 여섯 장 모두(같은 게임 두 장은 같은 콘텐츠)
 export const TARGET_SETS = {
   main3: {
-    file: 'targets/targets_main3.mind',
+    // 2026-11-20부터 포스터 조각을 더 넣은 파일(앞 셋은 예전 targets_main3.mind 그대로, 뒤는 조각 — targets/crops.js).
+    // 높이 걸려 조명이 반사돼 일부만 또렷해도 찾는다. 예전 파일은 되돌릴 때를 위해 남겨 둔다
+    file: 'targets/targets_main3_crops.mind',
     targets: [
       { game: 'otr', poster: '3U_Main', overlay: OTR_OVERLAY },
       { game: 'dont', poster: 'Dont_Main', overlay: DONT_OVERLAY },
